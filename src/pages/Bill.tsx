@@ -131,6 +131,7 @@ export function BillPage() {
             Released {bill.originCity ? `in ${bill.originCity} ` : ""}on <time className="dt-published" dateTime={new Date(bill.createdAt).toISOString()}>{longDate(bill.createdAt)}</time> · {age(bill.createdAt)}
             {bill.status === "holding" && bill.holderSince && <> · in someone's pocket{bill.holderPlace ? ` near ${bill.holderPlace}` : ""} for {timeAgo(bill.holderSince).replace(" ago", "")}</>}
             {bill.status === "wild" && bill.wildSince && <> · in the wild for {timeAgo(bill.wildSince).replace(" ago", "")}</>}
+            {" · "}<Link href={`/books?bill=${bill.serial}`} className="font-semibold text-ink underline-offset-4 hover:underline">Its PayPal ledger</Link>
           </p>
           {bill.forkedFrom && (
             <p className="mt-2 text-sm">

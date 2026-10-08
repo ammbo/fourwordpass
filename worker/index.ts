@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppConfig, FollowPreference, HomeData } from "../shared/types";
 import { checkFourWords, normalizeWords } from "../shared/words";
 import { admin } from "./admin";
+import { openBooks } from "./books";
 import { receiveEmail } from "./inbox";
 import * as ai from "./ai";
 import { runCron } from "./cron";
@@ -86,6 +87,8 @@ app.get("/api/wild", async (c) => {
   // Newest and most-followed first, so spam sinks.
   return c.json(await summaries(c.env, "status = 'wild'", "featured DESC, follower_count DESC, wild_since DESC", 60));
 });
+
+app.get("/api/books", async (c) => c.json(await openBooks(c.env)));
 
 app.get("/api/bills/:serial", async (c) => {
   const bill = await getBillBySerial(c.env, c.req.param("serial"));

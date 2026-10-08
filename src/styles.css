@@ -204,6 +204,15 @@
   }
 }
 
+/* Open books: money in reads green, money out reads in ink. The sign carries the meaning. */
+.books-in {
+  color: #24613f;
+  font-weight: 600;
+}
+.books-out {
+  color: var(--color-ink);
+}
+
 .maplibregl-ctrl-attrib {
   font-size: 10px !important;
 }

@@ -8,6 +8,12 @@ Brand assets, search metadata, crawler endpoints, and remaining launch checks: [
 
 The live site is a sandbox beta: payment amounts are test money, while public posts and app emails are real. Published privacy, terms, beta, and support pages are maintained together in `shared/info.ts`. See [Policies and support](docs/policies-and-support.md) for the operator's manual inbox and privacy-request procedures.
 
+## PayPal, AI and AG Grid at a glance
+
+- **PayPal (sandbox)** moves the money. **Orders API v2** with the **JavaScript SDK** buttons takes the $2 to release or fork a bill. The **Payouts API** sends $1 to the next holder on every hop. **Webhooks** (`PAYMENT.PAYOUTS-ITEM.*`, checked with verify-webhook-signature) confirm each payout before the story advances, with polling as a fallback. See [worker/paypal.ts](worker/paypal.ts).
+- **AI** plays the bill, never the author. **Workers AI** runs Llama 3.3 70B (personality at mint, word suggestions), gpt-oss-120b (diary, nags, eulogy) and FLUX.1 [schnell] (passport stamp art). Claude takes over the writing if `ANTHROPIC_API_KEY` is set. See [worker/ai.ts](worker/ai.ts).
+- **AG Grid + AG Charts** (Community, MIT) power **Open Books** at [/books](https://fourwordpass.com/books): a live public ledger of every PayPal checkout and payout, with charts that follow the ledger's filters. See [Open Books](#open-books).
+
 ## What changed from the PRD
 
 The concept and the core loop are built as specified. These are the deliberate departures:
@@ -31,6 +37,7 @@ The concept and the core loop are built as specified. These are the deliberate d
 - **Passport stamps** are crisp SVG (city, date, serial, hop number) with an AI ink illustration tinted into the middle. Image models garble text, so they never draw the lettering.
 - **Fast polling** right after each payout, plus the webhook, plus a cron fallback. In sandbox the "watch it land" moment takes seconds.
 - **Each bill gets a unique spirograph rosette** on its banknote, generated from its serial.
+- **Open Books**, a public ledger of every dollar in and out (AG Grid + AG Charts). Being the sender of record on every payout is what makes it possible.
 
 ## Names and puns
 
@@ -43,6 +50,7 @@ One pun per surface, and each one has a job.
 | **Pass the buck** | the button you press, the hero subhead | The verb |
 | **The Foreword** | the creator's first four words (drop cap on the story) | The arc: Foreword → Story → Finale (or Eulogy) |
 | **Pay It ForWord** | story section, footer | The ethic |
+| **Open Books** | the public ledger at `/books` | Transparency: the account books, and the story books |
 
 "Four" is a homonym, so every spelling resolves: `forwordpass.com`, `forewordpass.com`, `forewardpass.com` and `www.` all 301 to `fourwordpass.com`, keeping the path.
 
@@ -55,16 +63,26 @@ worker/
   paypal.ts      Payouts + Orders + webhook verification (and a mock for local dev)
   ai.ts          personality, diary, nags, suggestions, eulogy, stamps; prompts are versioned
   views.ts       public projections (emails, payout ids, ai_assisted never leave here)
+  books.ts       Open Books: every checkout and payout, masked for the public ledger
   cron.ts        every minute: poll payouts, backfill side effects, wild returns, nag ladder, deaths
   admin.ts       seed demo bills, fast-forward time, feature, remove a hop
 shared/words.ts  the four-word rule (used by the browser counter AND the server)
-src/             React app: Home, Release, Wild, Bill page (story/map/diary/passport/fork tree)
+src/             React app: Home, Release, Wild, Bill page (story/map/diary/passport/fork tree), Open Books
 migrations/      D1 schema
 ```
 
 **Model:** a **pass** is $1 moving from the platform to a person, and a **hop** is four words. Every state change is a conditional `UPDATE`, so duplicate webhooks, racing polls and double clicks are no-ops. Hop index is assigned at confirmation. The only text that reaches a story outside a holder's hop goes through `writeCreatorFinale` (human) and `writeBillsOwnEnding` (AI, always labeled).
 
-**AI:** Claude (`claude-opus-5-5`, low effort, server-side refusal fallbacks) when `ANTHROPIC_API_KEY` is set. Without a key it falls back to Workers AI: Llama 3.3 where someone is waiting (suggestions, personality at mint) and gpt-oss-120b for background writing (diary, nags, eulogy). Every output records its model and prompt version.
+**AI:** Production runs on Workers AI: Llama 3.3 where someone is waiting (suggestions, personality at mint) and gpt-oss-120b for background writing (diary, nags, eulogy). With `ANTHROPIC_API_KEY` set, Claude (`claude-opus-5-5`, low effort, server-side refusal fallbacks) writes instead. Every output records its model and prompt version.
+
+## Open Books
+
+`/books` publishes every PayPal movement the platform has made. The platform takes every checkout and sends every payout itself, so it can show all of them.
+
+- **The ledger (AG Grid):** one row per $2 checkout or $1 payout, with the bill, the hop whose words rode on it, PayPal's status, a masked PayPal reference, time to land, and whether a signed webhook or polling confirmed it. Sorting, column filters, quick search, pagination, CSV export, and cells that flash when PayPal's status changes. `?bill=FWP-0002` opens it filtered to one bill; every bill page links there.
+- **The charts (AG Charts):** money in vs. out by day, payouts by PayPal status, time to land, who wrote the words (holders, creators' finales, and lost bills' labeled AI closings), and AI output by model. Every chart and stat tile is computed from the grid's filtered rows, so filtering the ledger re-slices the whole page.
+- **Privacy:** `worker/books.ts` returns no emails and no internal ids. PayPal references are masked to their last four characters, the same as the receipts on bill pages. Seeded demo bills are left out, because their payments were simulated.
+- **Weight:** the page and both libraries load lazily, so the rest of the app doesn't pay for them. Only the Community modules it uses are registered.
 
 ## Run it locally
 
@@ -134,3 +152,8 @@ Every admin call takes `Authorization: Bearer $ADMIN_TOKEN`.
 - **1:00:** the live counter shows free words as dashed chips and fills four slots. Typing "and then the lights dimmed" triggers "That's 2 content words. The buck demands four."
 - **2:30:** to show nags, `POST /api/admin/age {"serial":"FWP-…","hours":170}` sends all three nags and the followers' stall ping.
 - Seeded bills are labeled "Demo history". The live bill must be minted on camera.
+- **Open Books:** after minting on camera, open `/books?bill=FWP-…` from the bill page. The $2 checkout and the $1 payout are already there, and the status cell flashes when PayPal answers.
+
+## License
+
+[MIT](LICENSE)

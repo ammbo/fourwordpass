@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppConfig, BillSummary, CreatorView, FollowPreference, HolderView, HomeData, PublicBill } from "../shared/types";
+import type { AppConfig, BillSummary, CreatorView, FollowPreference, HolderView, HomeData, OpenBooks, PublicBill } from "../shared/types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -33,6 +33,7 @@ export const api = {
   config: () => req<AppConfig & { place?: string | null }>("/api/config"),
   home: () => req<HomeData>("/api/home"),
   wild: () => req<BillSummary[]>("/api/wild"),
+  books: () => req<OpenBooks>("/api/books"),
   bill: (serial: string) => req<PublicBill>(`/api/bills/${serial}`),
   version: (serial: string) => req<{ v: number }>(`/api/bills/${serial}/v`),
   holder: (serial: string, t: string) => req<HolderView>(`/api/bills/${serial}/holder?t=${encodeURIComponent(t)}`),

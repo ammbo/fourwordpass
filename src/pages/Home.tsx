@@ -72,7 +72,9 @@ export function Home() {
         </div>
       </section>
 
-      <p className="mt-3 text-center text-xs text-muted">Counters include labeled demo histories during the beta.</p>
+      <p className="mt-3 text-center text-xs text-muted">
+        Counters include labeled demo histories during the beta. Every real dollar in and out is in the <Link href="/books" className="font-semibold text-ink underline-offset-4 hover:underline">open books</Link>.
+      </p>
 
       {/* ---------------------------------------------------------------- how it works */}
       <section className="mx-auto max-w-6xl px-4 py-16">

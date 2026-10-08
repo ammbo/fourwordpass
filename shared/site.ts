@@ -47,6 +47,12 @@ export const PAGES: Record<string, PageMeta> = {
     description: "Browse bucks waiting for their next writer. Read a story, claim a buck, add four words, and pass it on. Holders play free. PayPal sandbox beta.",
     heading: "Bucks nobody named.",
   },
+  "/books": {
+    path: "/books",
+    title: "Open books · Every dollar in and out · Four Word Pass",
+    description: "A live public ledger of every PayPal checkout and payout behind Four Word Pass, with statuses straight from PayPal. Emails private, references masked. Sandbox beta.",
+    heading: "Every dollar, in and out.",
+  },
   ...Object.fromEntries(Object.values(INFO_PAGES).map(({ path, title, heading, description }) => [path, { path, title, heading, description }])),
 };
 

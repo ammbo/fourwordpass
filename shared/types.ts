@@ -113,6 +113,32 @@ export type AppConfig = {
   paypalClientId: string | null;
 };
 
+/** One PayPal movement in Open Books. References are masked; no emails, no internal ids. */
+export type BooksRow = {
+  id: string;            // opaque, stable
+  at: number;
+  direction: "in" | "out";
+  amount: number;        // dollars
+  kind: "release" | "fork" | "first_holder" | "claim" | "pass";
+  serial: string;
+  hop: number | null;    // the hop whose words rode on this payout
+  paypalStatus: string;  // COMPLETED | UNCLAIMED | SUCCESS | PENDING | FAILED | ...
+  outcome: "landed" | "in_flight" | "failed";
+  ref: string;           // "••••ZZ4H"
+  secondsToLand: number | null;
+  settledBy: "webhook" | "polling" | null;
+  webhook: boolean;      // a signed PayPal webhook arrived for it
+  mode: "sandbox" | "mock";
+};
+
+export type OpenBooks = {
+  totals: { paidIn: number; checkouts: number; paidOut: number; payouts: number; inFlight: number; failed: number; heldForWild: number };
+  rows: BooksRow[];
+  words: { holders: number; hops: number; creatorFinales: number; billClosings: number };
+  voice: { model: string; pieces: number; kind: "writing" | "stamps" }[];
+  generatedAt: number;
+};
+
 export type HomeData = {
   stats: { traveling: number; words: number; cities: number; hops: number };
   featured: BillSummary[];
