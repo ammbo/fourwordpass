@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fourwordpass",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // API, stamp images, and bill pages (for share meta tags) hit the Worker first.
+    "run_worker_first": ["/api/*", "/b/*"]
+  },
+  "routes": [{ "pattern": "fourwordpass.com", "custom_domain": true }],
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fourwordpass-db",
+      "database_id": "dc5ed14e-a6bd-4d6f-8abb-bc52f478aac2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "STAMPS", "bucket_name": "fourwordpass-stamps" }],
+  "ai": { "binding": "AI" },
+  "send_email": [{ "name": "EMAIL" }],
+  "ratelimits": [
+    { "name": "RL_WRITE", "namespace_id": "4201", "simple": { "limit": 12, "period": 60 } },
+    { "name": "RL_AI", "namespace_id": "4202", "simple": { "limit": 20, "period": 60 } }
+  ],
+  "vars": {
+    "APP_URL": "https://fourwordpass.com",
+    "MAIL_FROM": "buck@fourwordpass.com",
+    // "sandbox" uses the PayPal sandbox API; "mock" simulates payouts locally (no credentials needed).
+    "PAYPAL_MODE": "sandbox",
+    // "send" uses the EMAIL binding; "log" stores emails in D1 and prints them (dev).
+    "EMAIL_MODE": "send"
+  }
+  // Secrets (wrangler secret put): PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID,
+  // TOKEN_SECRET, ADMIN_TOKEN, and optionally ANTHROPIC_API_KEY.
+}

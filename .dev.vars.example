@@ -1,0 +1,12 @@
+# Copy to .dev.vars for local dev. Never commit .dev.vars.
+PAYPAL_MODE=mock
+EMAIL_MODE=log
+APP_URL=http://localhost:5173
+TOKEN_SECRET=dev-only-change-me
+ADMIN_TOKEN=dev-admin
+# PayPal sandbox app credentials (developer.paypal.com → Apps & Credentials → Sandbox)
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=
+PAYPAL_WEBHOOK_ID=
+# Optional: better writing for the bill's voice. Without it, Workers AI is used.
+ANTHROPIC_API_KEY=
