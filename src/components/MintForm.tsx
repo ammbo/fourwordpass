@@ -57,7 +57,7 @@ export function MintForm({ fork }: Props) {
     <div className="space-y-7">
       <section>
         <label className="mb-2 block font-display text-xl font-semibold">
-          {fork ? `Your four words, picking up after hop ${fork.atHop}` : "Your opening four words"}
+          {fork ? `Your four words, picking up after hop ${fork.atHop}` : "The foreword: your first four words"}
         </label>
         {fork && <p className="mb-3 font-display text-lg italic text-muted">“…{fork.tail}”</p>}
         <WordInput value={words} onChange={setWords} autoFocus touched={touched} placeholder={fork ? "but the robot refused" : "once a lonely robot"} />

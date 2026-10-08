@@ -10,8 +10,8 @@ export function Release() {
     <div className="mx-auto grid max-w-6xl gap-10 px-4 pb-24 pt-8 sm:pt-12 lg:grid-cols-[1fr_380px]">
       <div className="card p-5 sm:p-8">
         <div className="eyebrow">Release a buck</div>
-        <h1 className="mt-2 font-display text-4xl font-semibold leading-tight">Print a dollar with a story.</h1>
-        <p className="mt-2 mb-8 text-muted">You write the first four words. Strangers write the rest. You write the ending.</p>
+        <h1 className="mt-2 font-display text-4xl font-semibold leading-tight">Write the foreword.</h1>
+        <p className="mt-2 mb-8 text-muted">Four words to start it. Strangers write the story. You write the finale.</p>
         <MintForm />
       </div>
       <aside className="space-y-4 lg:pt-4">

@@ -199,7 +199,7 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
         `Share my page: ${share}`,
       ],
       quote: words,
-      quoteLabel: "Your opening words",
+      quoteLabel: "Your foreword",
       button: { label: "End the story (when it's time)", url: appUrl(env, `/b/${bill.serial}?c=${creatorToken}`) },
       unsubscribeUrl: appUrl(env, `/f/${followId}?t=${await capToken(env, "follow", followId)}`),
     }),

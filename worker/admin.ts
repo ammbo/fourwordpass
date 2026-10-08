@@ -76,6 +76,15 @@ admin.get("/outbox", async (c) => {
   return c.json(results);
 });
 
+/** Mail received at @fourwordpass.com. ?to= filters by recipient. */
+admin.get("/inbox", async (c) => {
+  const to = c.req.query("to")?.toLowerCase();
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, to_email, from_email, subject, text, links, received_at FROM inbox ${to ? "WHERE to_email = ?" : ""} ORDER BY received_at DESC LIMIT 20`,
+  ).bind(...(to ? [to] : [])).all<{ links: string }>();
+  return c.json(results.map((r) => ({ ...r, links: JSON.parse(r.links || "[]") })));
+});
+
 admin.post("/end", async (c) => {
   const { serial } = await c.req.json<{ serial: string }>();
   const bill = await getBillBySerial(c.env, serial);

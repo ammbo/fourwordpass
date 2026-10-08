@@ -28,6 +28,20 @@ The concept and the core loop are built as specified. These are the deliberate d
 - **Fast polling** right after each payout, plus the webhook, plus a cron fallback. In sandbox the "watch it land" moment takes seconds.
 - **Each bill gets a unique spirograph rosette** on its banknote, generated from its serial.
 
+## Names and puns
+
+One pun per surface, and each one has a job.
+
+| Pun | Lives in | Job |
+|---|---|---|
+| **Four Word Pass** | name, the "4" logo, the URL | States the rule, and sounds like "forward pass" |
+| **Passage of the Buck** | home hero headline, the bill's map ("The Passage") | The concept: a dollar's journey, and a passage of text |
+| **Pass the buck** | the button you press, the hero subhead | The verb |
+| **The Foreword** | the creator's first four words (drop cap on the story) | The arc: Foreword → Story → Finale (or Eulogy) |
+| **Pay It ForWord** | story section, footer | The ethic |
+
+"Four" is a homonym, so every spelling resolves: `forwordpass.com`, `forewordpass.com`, `forewardpass.com` and `www.` all 301 to `fourwordpass.com`, keeping the path.
+
 ## Architecture
 
 ```
@@ -88,6 +102,10 @@ Until these are set, the live site runs in **simulated** mode and labels it ever
 
 Optional: `npx wrangler secret put ANTHROPIC_API_KEY` for a noticeably better bill voice.
 
+## Email
+
+Outbound mail goes through Cloudflare Email Sending, from `buck@fourwordpass.com` with the bill's serial as the sender name. Inbound mail to **any** `@fourwordpass.com` address is caught by Email Routing and stored by the Worker's `email()` handler. Read it with `GET /api/admin/inbox?to=someone@fourwordpass.com`. That makes it a real inbox for end-to-end tests: claim or pass a bill to `anything@fourwordpass.com`, then follow the link the bill emails. Replies to the bill land there too, if you ever want the bill to answer back.
+
 ## Admin
 
 Every admin call takes `Authorization: Bearer $ADMIN_TOKEN`.
@@ -100,7 +118,7 @@ Every admin call takes `Authorization: Bearer $ADMIN_TOKEN`.
 | `POST /api/admin/decorate {serial, stamps}` | Diary entries and stamps for a seeded bill |
 | `POST /api/admin/feature {serial, featured}` | Feature on the home page |
 | `POST /api/admin/remove-hop {serial, idx}` | Remove an abusive hop. The story recomputes and payout history stays. |
-| `POST /api/admin/cron` · `GET /api/admin/outbox` | Run cron now · recent emails |
+| `POST /api/admin/cron` · `GET /api/admin/outbox` · `GET /api/admin/inbox` | Run cron now · recent sent emails · received emails |
 
 ## Demo script notes (PRD §20)
 

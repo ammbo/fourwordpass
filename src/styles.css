@@ -185,6 +185,16 @@
   .hop[data-fresh="true"] {
     background: #f3dd8a;
   }
+  /* The foreword opens like a book. */
+  .dropcap::first-letter {
+    text-transform: uppercase;
+    float: left;
+    font-size: 3.4em;
+    line-height: 0.82;
+    font-weight: 700;
+    padding: 0.06em 0.08em 0 0;
+    color: var(--color-ink);
+  }
   .guilloche {
     background-color: var(--color-bill);
     background-image:

@@ -47,7 +47,7 @@ export function App() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-sm text-muted sm:flex-row sm:justify-between">
           <div>
-            <span className="font-display font-semibold text-ink">Four Word Pass</span> · Pass the buck. Pay it forword.
+            <span className="font-display font-semibold text-ink">Four Word Pass</span> <span className="italic">(say it out loud)</span> · Pay it forword.
           </div>
           <div>Every hop is a real PayPal payout (sandbox during the beta). Stories are written by people; the bill only narrates.</div>
         </div>

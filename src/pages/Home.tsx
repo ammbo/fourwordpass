@@ -28,16 +28,15 @@ export function Home() {
       {/* ---------------------------------------------------------------- hero */}
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-10 sm:pt-16 md:grid-cols-[1.1fr_1fr]">
         <div className="animate-rise">
-          <div className="eyebrow">Passage of the Buck</div>
-          <h1 className="mt-3 font-display text-[2.7rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl">
-            Pass the buck.
-            <br />
-            Write a story.
-            <br />
-            <span className="italic text-ink-3">Four words at a time.</span>
+          <div className="eyebrow">A real dollar · a story by strangers</div>
+          <h1 className="mt-3 font-display text-[3.1rem] font-semibold leading-[0.95] tracking-tight sm:text-7xl">
+            Passage of the <span className="italic text-ink-3">Buck.</span>
           </h1>
-          <p className="mt-5 max-w-lg text-lg leading-relaxed text-ink-2">
-            Every holder adds exactly four words to the story it carries, then passes the buck on through PayPal. Strangers write it. The bill keeps a diary.
+          <p className="mt-5 font-display text-[1.45rem] italic leading-snug text-ink-2 sm:text-[1.7rem]">
+            Pass the buck. Write a story. Four words at a time.
+          </p>
+          <p className="mt-4 max-w-lg text-lg leading-relaxed text-ink-2">
+            A real dollar travels hand to hand through PayPal. Each holder adds exactly four words to the story it carries, then passes it on. The bill keeps a diary.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/release" className="btn btn-primary !px-6 !py-3.5 !text-base">Release a buck · $2</Link>
@@ -76,7 +75,7 @@ export function Home() {
         <h2 className="font-display text-3xl font-semibold sm:text-4xl">How the buck moves</h2>
         <div className="mt-8 grid gap-5 md:grid-cols-3">
           {[
-            ["01", "Release a buck", "Pay $2: one dollar rides with the bill, one keeps the lights on. Write the opening four words and pick who gets it first, or set it loose in the wild."],
+            ["01", "Write the foreword", "Release a buck for $2: one dollar rides with the bill, one keeps the lights on. You write the first four words and pick who gets it first, or set it loose in the wild."],
             ["02", "Add four words", "Whoever holds it adds exactly four words that count. Little words like the, a, to and of ride free, so grammar still works. AI can suggest; it never writes."],
             ["03", "Pass the buck", "Name the next person by email or release it to the wild. PayPal sends them a real dollar. When the payout lands, your words join the story."],
           ].map(([n, t, d]) => (

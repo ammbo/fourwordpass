@@ -8,10 +8,17 @@
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // API, stamp images, and bill pages (for share meta tags) hit the Worker first.
-    "run_worker_first": ["/api/*", "/b/*"]
+    // Everything but hashed assets hits the Worker first: share meta tags on /b/*,
+    // and 301s from the homonym domains (forwordpass, forewordpass, forewardpass).
+    "run_worker_first": ["/*", "!/assets/*"]
   },
-  "routes": [{ "pattern": "fourwordpass.com", "custom_domain": true }],
+  "routes": [
+    { "pattern": "fourwordpass.com", "custom_domain": true },
+    { "pattern": "www.fourwordpass.com", "custom_domain": true },
+    { "pattern": "forwordpass.com", "custom_domain": true },
+    { "pattern": "forewordpass.com", "custom_domain": true },
+    { "pattern": "forewardpass.com", "custom_domain": true }
+  ],
   "triggers": { "crons": ["* * * * *"] },
   "d1_databases": [
     {

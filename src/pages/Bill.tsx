@@ -157,6 +157,10 @@ export function BillPage() {
           <Story bill={bill} active={active} onActive={setActive} freshIdx={fresh} />
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h3 className="font-display text-xl font-semibold">The Passage</h3>
+            <span className="text-xs text-muted">Every pin is a pair of hands</span>
+          </div>
           <TrailMap hops={bill.hops} activeKey={activeKey} onHoverKey={(k) => setActive(k ? { place: k } : null)} className="h-72 sm:h-80" />
           <Inspector bill={bill} hop={activeHop ?? (active ? null : last)} placeKey={active && "place" in active ? active.place : null} onFork={setForkAt} />
           {!holderToken && !ended && (
@@ -226,7 +230,9 @@ function Inspector({ bill, hop, placeKey: pk, onFork }: { bill: PublicBill; hop:
   return (
     <div className="card mt-3 p-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted">Hop {hop.idx}{hop.inherited ? " · inherited" : ""}</div>
+        <div className="font-mono text-xs uppercase tracking-widest text-muted">
+          {hop.idx === 1 ? "Hop 1 · the foreword" : `Hop ${hop.idx}`}{hop.inherited ? " · inherited" : ""}
+        </div>
         <div className="font-mono text-xs text-muted">{longDate(hop.confirmedAt)}</div>
       </div>
       <div className="mt-1 font-display text-xl">“{hop.words}”</div>

@@ -61,6 +61,9 @@ export async function runCron(env: Env, ctx: Ctx) {
     }
   });
 
+  // Keep the test inbox small.
+  await safely("inbox-trim", () => env.DB.prepare("DELETE FROM inbox WHERE received_at < ?").bind(t - 30 * DAY).run());
+
   // 5. Fourteen days without moving: the bill writes its eulogy and closes the story.
   await safely("deaths", async () => {
     const { results } = await env.DB.prepare(

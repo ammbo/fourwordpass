@@ -50,7 +50,7 @@ export function Story({ bill, active, onActive, freshIdx }: Props) {
         </button>
       )}
       {paragraphs.map((para, pi) => (
-        <p key={pi} className="mb-4">
+        <p key={pi} className={`mb-4 ${pi === 0 && !hidden ? "dropcap" : ""}`}>
           {para.map((h) => (
             <Fragment key={h.idx}>
               <span

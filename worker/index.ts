@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppConfig, FollowPreference, HomeData } from "../shared/types";
 import { checkFourWords, normalizeWords } from "../shared/words";
 import { admin } from "./admin";
+import { receiveEmail } from "./inbox";
 import * as ai from "./ai";
 import { runCron } from "./cron";
 import { type PassRow, getBillBySerial, getPass, storyTail } from "./db";
@@ -20,6 +21,15 @@ async function limit(binding: RateLimit, key: string) {
   const { success } = await binding.limit({ key });
   if (!success) throw new UserError("Slow down a little. The buck isn't going anywhere.", 429);
 }
+
+// "Four" is a homonym. Every spelling someone might hear lands on the real site.
+const CANONICAL_HOST = "fourwordpass.com";
+const ALIAS_HOSTS = new Set(["www.fourwordpass.com", "forwordpass.com", "www.forwordpass.com", "forewordpass.com", "www.forewordpass.com", "forewardpass.com", "www.forewardpass.com"]);
+app.use("*", async (c, next) => {
+  const url = new URL(c.req.url);
+  if (ALIAS_HOSTS.has(url.hostname)) return c.redirect(`https://${CANONICAL_HOST}${url.pathname}${url.search}`, 301);
+  await next();
+});
 
 app.onError((err, c) => {
   if (err instanceof UserError) return c.json({ error: err.message }, err.status as 400);
@@ -275,9 +285,15 @@ app.get("/b/:serial", async (c) => {
     .transform(new Response(index.body, { status: 200, headers }));
 });
 
+// Everything else is the single-page app.
+app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+
 export default {
   fetch: app.fetch,
   async scheduled(_event, env, ctx) {
     await runCron(env, ctx);
+  },
+  async email(message, env) {
+    await receiveEmail(message, env);
   },
 } satisfies ExportedHandler<Env>;
