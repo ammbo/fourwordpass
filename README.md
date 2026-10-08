@@ -86,9 +86,13 @@ npm run deploy    # build → remote D1 migrations → wrangler deploy
 
 Production secrets (`TOKEN_SECRET`, `ADMIN_TOKEN`) are already set. A copy is in `.secrets.local`, which is gitignored. Email Sending is enabled for `fourwordpass.com`; mail comes from `buck@fourwordpass.com` with the bill's serial as the sender name.
 
-## Going live with PayPal sandbox
+## PayPal sandbox
 
-Until these are set, the live site runs in **simulated** mode and labels it everywhere.
+**Live in sandbox as of Oct 8, 2026.** The client ID, secret and webhook ID are set as Worker secrets, and the webhook is registered for `https://fourwordpass.com/api/webhooks/paypal`. A real end-to-end run passed: claim → payout `UNCLAIMED` in ~17s → holder email received → contribute from the emailed link → second payout → signed webhook verified and matched.
+
+Local dev stays on mock PayPal. Set `PAYPAL_MODE=sandbox` in `.dev.vars` to use real sandbox locally; webhooks can't reach localhost, but polling settles payouts anyway.
+
+To set it up from scratch:
 
 1. developer.paypal.com → Apps & Credentials → **Sandbox** → create an app, and make sure **Payouts** is ticked under its features.
 2. Set the credentials and register the webhook:

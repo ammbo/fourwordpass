@@ -62,6 +62,8 @@ admin.post("/remove-hop", async (c) => {
   const bill = await getBillBySerial(c.env, serial);
   if (!bill) return c.json({ error: "No such bill" }, 404);
   await c.env.DB.batch([
+    // The diary may quote the removed words, so its entry goes too.
+    c.env.DB.prepare("DELETE FROM diary WHERE hop_id IN (SELECT id FROM hops WHERE bill_id = ? AND idx = ? AND status = 'confirmed')").bind(bill.id, idx),
     c.env.DB.prepare("UPDATE hops SET status = 'removed' WHERE bill_id = ? AND idx = ? AND status = 'confirmed'").bind(bill.id, idx),
     c.env.DB.prepare(
       `UPDATE bills SET hop_count = (SELECT COUNT(*) FROM hops WHERE bill_id = ?1 AND status = 'confirmed'),
