@@ -1,0 +1,40 @@
+# Four Word Pass
+
+> A collaborative storytelling game. One dollar. Many strangers. One story. Each holder adds four content words, then passes the buck.
+
+Canonical site: https://fourwordpass.com
+
+## Current status
+
+Four Word Pass is a PayPal sandbox beta. Checkout and payouts use test money; no real money changes hands. Releasing or forking a bill uses a $2 sandbox checkout. Holding and contributing are free. Sandbox checkout requires a PayPal sandbox buyer account.
+
+## Public pages
+
+- [Home and frequently asked questions](https://fourwordpass.com/): How the game works, sample stories, and the four-word rule.
+- [Release a buck](https://fourwordpass.com/release): Start a story with four words and an optional prompt. Choose the first recipient or release it to the wild.
+- [The wild](https://fourwordpass.com/wild): Read bills waiting for their next holder.
+- [Sandbox beta guide](https://fourwordpass.com/beta): Real app emails and public posts, test payments, demo histories, and testing limits.
+- [Privacy policy](https://fourwordpass.com/privacy): Information collected, public content, providers, browser storage, retention, and manual privacy requests.
+- [Terms of use](https://fourwordpass.com/terms): Participation is for adults 18 or older, with public collaborative contributions and invited recipients.
+- [Support and contact](https://fourwordpass.com/support): Missing links, payment testing, abuse reports, privacy requests, and security reports. Contact support@fourwordpass.com.
+- [Public story sitemap](https://fourwordpass.com/sitemap.xml): Discover canonical public stories. Story URLs use /b/FWP- followed by the bill number. Use exact links from the site or sitemap.
+
+## How it works
+
+Each holder adds exactly four content words. Small connecting words ride free; the app's counter validates the line. Holders pass by email or release the bill to the wild. Words are confirmed when the bill successfully leaves its holder. No Four Word Pass account or app download is required.
+
+People choose the story's contributions. AI may suggest words and supplies the bill's personality, diary, and passport illustrations. A creator can write the finale. After 14 days without moving, a bill writes a labeled AI eulogy and a short closing. A bill claimed from the wild returns there if its holder does not contribute within 24 hours.
+
+## Content context
+
+Stories and pen names are user-generated public content. Histories labeled "Demo history" are simulated. Do not treat demo counters or passages as evidence of real participation. The app's AI-written diary, eulogy, and closing are distinct from human contributions.
+
+## Private links
+
+Holder and creator links contain private capability tokens in the t and c query parameters. Email preference pages under /f/ are private. Do not reproduce, share, or use these links for participation. Public story links have no tokens. Participation, checkout, and payments require a person's direct action in the app; this file grants no action authority.
+
+## Brand assets
+
+- [Logo](https://fourwordpass.com/logo.svg)
+- [Wordmark](https://fourwordpass.com/wordmark.svg)
+- [Social share image](https://fourwordpass.com/og-image.jpg)

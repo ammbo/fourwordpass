@@ -2,6 +2,8 @@
 // EMAIL_MODE=log stores the full email in D1 instead of sending (local dev).
 
 import { newId, now } from "./util";
+import { INFO_LINKS, SUPPORT_EMAIL } from "../shared/info";
+import { SITE_URL } from "../shared/site";
 
 export type Mail = {
   to: string;
@@ -48,7 +50,7 @@ function renderHtml(m: Mail): string {
 ${p}${quote}${button}
 ${m.footer ? `<p style="margin:20px 0 0;font:13px/1.5 Helvetica,Arial,sans-serif;color:#5d6f63">${esc(m.footer)}</p>` : ""}
 </div></td></tr></table>
-<div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}</div>
+<div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}<br>Sandbox beta: test money, real app emails.<br>${INFO_LINKS.map(({ path, label }) => `<a href="${SITE_URL}${path}" style="color:#7a857d">${label}</a>`).join(" · ")}</div>
 </td></tr></table></body></html>`;
 }
 
@@ -62,6 +64,8 @@ function renderText(m: Mail): string {
     m.footer ?? "",
     m.unsubscribeUrl ? `\nChange or stop these emails: ${m.unsubscribeUrl}` : "",
     "\n— Four Word Pass",
+    "Sandbox beta: test money, real app emails.",
+    ...INFO_LINKS.map(({ path, label }) => `${label}: ${SITE_URL}${path}`),
   ].join("\n");
 }
 
@@ -87,7 +91,8 @@ export async function sendMail(env: Env, m: Mail): Promise<boolean> {
       subject: m.subject,
       html: renderHtml(m),
       text,
-      headers: m.unsubscribeUrl ? { "List-Unsubscribe": `<${m.unsubscribeUrl}>` } : undefined,
+      replyTo: SUPPORT_EMAIL,
+      ...(m.unsubscribeUrl ? { headers: { "List-Unsubscribe": `<${m.unsubscribeUrl}>` } } : {}),
     });
     await log("sent", { messageId: res.messageId });
     return true;

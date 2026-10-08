@@ -1,4 +1,4 @@
 import { defineConfig } from "vitest/config";
 
-// Unit tests run in plain Node; they cover pure logic only.
+// Tests run in plain Node; external services use local stubs.
 export default defineConfig({ test: { include: ["test/**/*.test.ts"] } });

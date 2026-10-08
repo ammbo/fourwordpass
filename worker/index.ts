@@ -11,6 +11,7 @@ import { UserError } from "./engine";
 import { createOrder, paypalMode, parsePayoutEvent, verifyWebhook } from "./paypal";
 import { checkCap, newId, now, placeFromRequest, placeLabel } from "./util";
 import { SUGGESTIONS_PER_HOLDER, creatorView, holderView, publicBill, summaries } from "./views";
+import { servePage, serveSitemap } from "./seo";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -27,8 +28,13 @@ const CANONICAL_HOST = "fourwordpass.com";
 const ALIAS_HOSTS = new Set(["www.fourwordpass.com", "forwordpass.com", "www.forwordpass.com", "forewordpass.com", "www.forewordpass.com", "forewardpass.com", "www.forewardpass.com"]);
 app.use("*", async (c, next) => {
   const url = new URL(c.req.url);
-  if (ALIAS_HOSTS.has(url.hostname)) return c.redirect(`https://${CANONICAL_HOST}${url.pathname}${url.search}`, 301);
+  c.header("Referrer-Policy", "no-referrer");
+  c.header("X-Content-Type-Options", "nosniff");
+  if (ALIAS_HOSTS.has(url.hostname) || (url.hostname === CANONICAL_HOST && url.protocol !== "https:")) return c.redirect(`https://${CANONICAL_HOST}${url.pathname}${url.search}`, 301);
   await next();
+  // Also apply to raw asset/HTML Responses returned by downstream handlers.
+  c.header("Referrer-Policy", "no-referrer");
+  c.header("X-Content-Type-Options", "nosniff");
 });
 
 app.onError((err, c) => {
@@ -40,6 +46,7 @@ app.onError((err, c) => {
 app.use("/api/*", async (c, next) => {
   await next();
   c.header("Cache-Control", c.res.headers.get("Cache-Control") ?? "no-store");
+  c.header("X-Robots-Tag", "noindex, nofollow");
 });
 
 // ------------------------------------------------------------------ read
@@ -257,36 +264,21 @@ app.route("/api/admin", admin);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
-// ------------------------------------------------------------------ share pages
-
-/** Bill pages are the shareable artifact: give link previews something to show. */
-app.get("/b/:serial", async (c) => {
-  const index = await c.env.ASSETS.fetch(new Request(new URL("/", c.req.url)));
-  const bill = await getBillBySerial(c.env, c.req.param("serial"));
-  const headers = new Headers(index.headers);
-  // Holder links carry a token in the URL; don't leak it to third parties (map tiles, fonts).
-  headers.set("Referrer-Policy", "no-referrer");
-  headers.set("Cache-Control", "no-store");
-  if (!bill) return new Response(index.body, { status: 200, headers });
-  const tail = await storyTail(c.env, bill.id, 24);
-  const title = `${bill.serial} · ${bill.hop_count} hops, written by strangers`;
-  const desc = tail ? `“…${tail}” Four words at a time, one dollar passed hand to hand.` : "A dollar with a story. Add four words, pass it on.";
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-  const meta = [
-    `<meta property="og:title" content="${esc(title)}">`,
-    `<meta property="og:description" content="${esc(desc)}">`,
-    `<meta property="og:type" content="article">`,
-    `<meta name="twitter:card" content="summary">`,
-    `<meta name="description" content="${esc(desc)}">`,
-  ].join("");
-  return new HTMLRewriter()
-    .on("title", { element: (el) => void el.setInnerContent(title) })
-    .on("head", { element: (el) => void el.append(meta, { html: true }) })
-    .transform(new Response(index.body, { status: 200, headers }));
+// ------------------------------------------------------------------ search and share pages
+app.get("/sitemap.xml", (c) => serveSitemap(c.req.path, c.env));
+app.get("/sitemap-pages.xml", (c) => serveSitemap(c.req.path, c.env));
+app.get("*", async (c) => {
+  if (/^\/sitemap-bills-[^/]+\.xml$/.test(c.req.path)) return serveSitemap(c.req.path, c.env);
+  // Vite's development modules include extensionless URLs.
+  if (c.req.path.startsWith("/@") || c.req.path === "/__vite_ping") return c.env.ASSETS.fetch(c.req.raw);
+  // Static files retain their native content types. Missing files must not become SPA HTML.
+  if (/\.[a-z0-9]+$/i.test(c.req.path)) {
+    const asset = await c.env.ASSETS.fetch(c.req.raw);
+    return asset.headers.get("Content-Type")?.includes("text/html") ? c.text("Not found", 404) : asset;
+  }
+  return servePage(c.req.raw, c.env);
 });
-
-// Everything else is the single-page app.
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+app.all("*", (c) => c.text("Method not allowed", 405));
 
 export default {
   fetch: app.fetch,

@@ -82,7 +82,7 @@ export type HopRow = {
   confirmed_at: number | null;
 };
 
-export function personalityOf(bill: BillRow): Personality {
+export function personalityOf(bill: Pick<BillRow, "personality">): Personality {
   try {
     const p = JSON.parse(bill.personality) as Partial<Personality>;
     return {

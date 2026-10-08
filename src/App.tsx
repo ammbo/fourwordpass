@@ -3,6 +3,9 @@ import { Link, Route, Switch, useLocation } from "wouter";
 import { BillPage } from "./pages/Bill";
 import { Home } from "./pages/Home";
 import { FollowManage, NotFound, Release, Wild } from "./pages/Other";
+import { PageMetadata } from "./components/PageMetadata";
+import { Info } from "./pages/Info";
+import { INFO_LINKS } from "../shared/info";
 
 function ScrollToTop() {
   const [path] = useLocation();
@@ -16,10 +19,11 @@ export function App() {
   return (
     <div className="flex min-h-dvh flex-col">
       <ScrollToTop />
+      <PageMetadata />
       <header className="sticky top-0 z-40 border-b border-line/70 bg-paper/85 backdrop-blur-md">
         <nav className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="grid h-8 w-12 shrink-0 place-items-center rounded-md border-2 border-ink bg-bill font-display text-base font-bold italic text-ink">4</span>
+          <Link href="/" className="flex items-center gap-2.5" aria-label="Four Word Pass home">
+            <img src="/logo.svg" width="48" height="36" alt="" className="h-9 w-12 shrink-0" />
             <span className="whitespace-nowrap font-display text-base font-semibold tracking-tight sm:text-lg">Four Word Pass</span>
           </Link>
           <div className="flex items-center gap-1 whitespace-nowrap text-sm font-semibold sm:gap-2">
@@ -41,15 +45,21 @@ export function App() {
           <Route path="/wild" component={Wild} />
           <Route path="/b/:serial" component={BillPage} />
           <Route path="/f/:id" component={FollowManage} />
+          {INFO_LINKS.map(({ path }) => <Route key={path} path={path} component={Info} />)}
           <Route component={NotFound} />
         </Switch>
       </main>
       <footer className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-8 text-sm text-muted sm:flex-row sm:justify-between">
-          <div>
-            <span className="font-display font-semibold text-ink">Four Word Pass</span> <span className="italic">(say it out loud)</span> · Pay it forword.
+        <div className="mx-auto max-w-6xl px-4 py-8 text-sm text-muted">
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+            <div>
+              <span className="font-display font-semibold text-ink">Four Word Pass</span> <span className="italic">(say it out loud)</span> · Pay it forword.
+            </div>
+            <div className="max-w-lg">PayPal sandbox beta: no real money changes hands. People write the story; AI gives the bill its diary, stamps, and eulogy.</div>
           </div>
-          <div>Every hop is a real PayPal payout (sandbox during the beta). Stories are written by people; the bill only narrates.</div>
+          <nav aria-label="Information" className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            {INFO_LINKS.map(({ path, label }) => <Link key={path} href={path} className="underline-offset-4 hover:text-ink hover:underline">{label}</Link>)}
+          </nav>
         </div>
       </footer>
     </div>

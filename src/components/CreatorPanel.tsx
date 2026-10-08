@@ -3,6 +3,7 @@ import type { CreatorView, PublicBill } from "../../shared/types";
 import { checkFinale } from "../../shared/words";
 import { api } from "../api";
 import { WordInput } from "./WordInput";
+import { ParticipationTerms } from "./ParticipationTerms";
 
 /** The finale returns to whoever minted the bill. AI suggests; the human writes. */
 export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string }) {
@@ -12,6 +13,7 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
   const [options, setOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState<"suggest" | "end" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState(false);
 
   useEffect(() => {
     api.creator(bill.serial, token).then(setView, () => setView({ valid: false }));
@@ -39,6 +41,7 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
   const end = async () => {
     const c = checkFinale(words);
     if (!c.ok) return setError(c.error!);
+    if (!accepted) return setError("Confirm you're 18 or older and agree to the terms before publishing the finale.");
     setBusy("end");
     setError(null);
     try {
@@ -85,6 +88,7 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
             ))}
           </div>
           {error && <div className="mt-3 text-sm font-medium text-serial">{error}</div>}
+          <ParticipationTerms checked={accepted} onChange={setAccepted} />
           <button type="button" className="btn btn-primary mt-4" onClick={end} disabled={!!busy || !view.canEnd}>
             {busy === "end" ? "Ending…" : "End the story"}
           </button>

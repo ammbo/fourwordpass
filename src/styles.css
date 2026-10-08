@@ -210,3 +210,11 @@
 .maplibregl-canvas:focus {
   outline: none;
 }
+
+.policy-copy p + p, .policy-copy ul + p, .policy-copy ol + p { margin-top: 1rem; }
+.policy-copy ul, .policy-copy ol { padding-left: 1.5rem; }
+.policy-copy ul { list-style-type: disc; }
+.policy-copy ol { list-style-type: decimal; }
+.policy-copy li + li { margin-top: 0.6rem; }
+.policy-copy a { text-decoration: underline; text-underline-offset: 3px; }
+.policy-copy a:hover { color: var(--color-ink); }

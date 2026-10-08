@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import type { FollowPreference } from "../../shared/types";
 import { isEmail } from "../../shared/words";
 import { api } from "../api";
@@ -58,6 +59,7 @@ export function FollowBox({ serial, compact, dark }: { serial: string; compact?:
           </label>
         ))}
       </div>
+      <p className={`mt-2 text-xs ${muted}`}>Follow requests email updates for this story. Every update includes a stop link. <Link href="/privacy" target="_blank" rel="noreferrer" className="underline underline-offset-2">Privacy</Link> · <Link href="/support" target="_blank" rel="noreferrer" className="underline underline-offset-2">Help</Link></p>
       {error && <div className="mt-2 text-sm text-serial">{error}</div>}
     </form>
   );

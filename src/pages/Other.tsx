@@ -4,6 +4,7 @@ import type { FollowPreference } from "../../shared/types";
 import { api, useLoad } from "../api";
 import { BillCard } from "../components/BillCard";
 import { MintForm } from "../components/MintForm";
+import { BETA_NOTICE } from "../../shared/site";
 
 export function Release() {
   return (
@@ -12,12 +13,13 @@ export function Release() {
         <div className="eyebrow">Release a buck</div>
         <h1 className="mt-2 font-display text-4xl font-semibold leading-tight">Write the foreword.</h1>
         <p className="mt-2 mb-8 text-muted">Four words to start it. Strangers write the story. You write the finale.</p>
+        <p className="mb-5 rounded-xl border border-line bg-paper-2 p-3 text-sm text-ink-2">{BETA_NOTICE}</p>
         <MintForm />
       </div>
       <aside className="space-y-4 lg:pt-4">
         {[
           ["Exactly four words", "Four words that count. The, a, an, and, or, but, to, of, in, on, at, for, with, by, from, as, is, was, are, were, be, been, it, its, this, that and then ride free."],
-          ["Every hop is real money", "Each pass is a $1 PayPal payout from us to the next holder. When PayPal confirms it, the story moves."],
+          ["A dollar carries the story", "Each pass is a $1 PayPal sandbox payout to the next holder. When PayPal confirms it, the story moves. During the beta, it is test money."],
           ["It has a personality", "Your bill is born with a voice. It keeps a diary, collects passport stamps, and nags anyone who sits on it."],
           ["You hold the ending", "Set a goal if you like. Whenever you're ready, you write the finale: up to twelve words."],
         ].map(([t, d]) => (

@@ -5,6 +5,7 @@ import { api } from "../api";
 import { FollowBox } from "./FollowBox";
 import { ShareButton } from "./ShareButton";
 import { WordInput } from "./WordInput";
+import { ParticipationTerms } from "./ParticipationTerms";
 
 type Props = { bill: PublicBill; token: string; onDone: () => void };
 
@@ -133,6 +134,7 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
   const [aiAssisted, setAiAssisted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(view.lastFailure ? `PayPal couldn't deliver to ${view.lastFailure.recipient}. Pick someone else, or release it into the wild.` : null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -159,6 +161,7 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
     setTouched(true);
     if (!check.ok) return setError(check.error!);
     if (!toWild && !isEmail(next)) return setError("Who's next? Add their email, or release it into the wild.");
+    if (!accepted) return setError("Confirm you're 18 or older and agree to the terms before passing.");
     setBusy(true);
     setError(null);
     try {
@@ -250,6 +253,7 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
         </div>
       )}
       {!more && place && showCity && <p className="mt-1 text-xs text-muted">Your stamp will say {place}.</p>}
+      <ParticipationTerms checked={accepted} onChange={setAccepted} />
 
       {error && <div className="mt-4 rounded-xl border border-serial/30 bg-serial/5 px-3.5 py-2.5 text-sm font-medium text-serial">{error}</div>}
 
@@ -257,7 +261,7 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
         {busy ? "Passing…" : toWild ? "Release the buck →" : "Pass the buck →"}
       </button>
       <p className="mt-2 text-center text-xs text-muted">
-        {toWild ? "The dollar waits with us until someone claims it." : "We send them $1 through PayPal. Your words land when it does."}
+        {toWild ? "The sandbox buck waits until someone claims it." : "We send a $1 PayPal sandbox payout. Your words land when it does. Only invite a willing recipient."}
       </p>
     </PanelShell>
   );

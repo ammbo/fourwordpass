@@ -4,6 +4,7 @@ import { checkFourWords, isEmail } from "../../shared/words";
 import { api, useLoad } from "../api";
 import { Checkout } from "./Checkout";
 import { WordInput } from "./WordInput";
+import { ParticipationTerms } from "./ParticipationTerms";
 
 type Props = { fork?: { serial: string; atHop: number; tail: string } };
 
@@ -22,6 +23,7 @@ export function MintForm({ fork }: Props) {
   const [showCity, setShowCity] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   const validate = () => {
     setTouched(true);
@@ -30,6 +32,7 @@ export function MintForm({ fork }: Props) {
     if (!toWild && !isEmail(recipient)) return "Who gets it first? Add their email, or release it into the wild.";
     if (!isEmail(email)) return "We need your email for your creator key.";
     if (!toWild && recipient.trim().toLowerCase() === email.trim().toLowerCase()) return "Send it to someone else. That's the whole game.";
+    if (!accepted) return "Confirm you're 18 or older and agree to the terms before checkout.";
     setError(null);
     return null;
   };
@@ -92,7 +95,7 @@ export function MintForm({ fork }: Props) {
         ) : (
           <>
             <input className="field" type="email" inputMode="email" autoComplete="off" value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="friend@example.com" />
-            <p className="mt-1.5 text-sm text-muted">They get $1 via PayPal plus an email from the bill. No signup needed.</p>
+            <p className="mt-1.5 text-sm text-muted">They get a sandbox $1 payout plus a real email from the bill. Invite someone who agreed to receive it.</p>
           </>
         )}
       </section>
@@ -132,6 +135,7 @@ export function MintForm({ fork }: Props) {
       </section>
 
       <section>
+        <ParticipationTerms checked={accepted} onChange={setAccepted} />
         {error && <div className="mb-3 rounded-xl border border-serial/30 bg-serial/5 px-3.5 py-2.5 text-sm font-medium text-serial">{error}</div>}
         <Checkout config={config} purpose={fork ? "fork" : "mint"} validate={validate} onPaid={onPaid} onError={setError} />
       </section>

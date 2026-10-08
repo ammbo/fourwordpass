@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /f/
+Disallow: /*?t=
+Disallow: /*?*&t=
+Disallow: /*?c=
+Disallow: /*?*&c=
+
+Sitemap: https://fourwordpass.com/sitemap.xml

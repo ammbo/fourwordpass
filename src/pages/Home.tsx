@@ -4,6 +4,7 @@ import { api, useLoad } from "../api";
 import { Banknote } from "../components/Banknote";
 import { BillCard } from "../components/BillCard";
 import { nf } from "../lib";
+import { BETA_NOTICE, FAQ } from "../../shared/site";
 
 const DEMO_LINES = [
   "the robot learned to dream tonight",
@@ -28,7 +29,7 @@ export function Home() {
       {/* ---------------------------------------------------------------- hero */}
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-14 pt-10 sm:pt-16 md:grid-cols-[1.1fr_1fr]">
         <div className="animate-rise">
-          <div className="eyebrow">A real dollar · a story by strangers</div>
+          <div className="eyebrow">One dollar · a story by strangers</div>
           <h1 className="mt-3 font-display text-[3.1rem] font-semibold leading-[0.95] tracking-tight sm:text-7xl">
             Passage of the <span className="italic text-ink-3">Buck.</span>
           </h1>
@@ -36,13 +37,14 @@ export function Home() {
             Pass the buck. Write a story. Four words at a time.
           </p>
           <p className="mt-4 max-w-lg text-lg leading-relaxed text-ink-2">
-            A real dollar travels hand to hand through PayPal. Each holder adds exactly four words to the story it carries, then passes it on. The bill keeps a diary.
+            A dollar travels from person to person through PayPal. Each holder adds four words to the story it carries, then passes it on. The bill keeps a diary.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/release" className="btn btn-primary !px-6 !py-3.5 !text-base">Release a buck · $2</Link>
             <Link href="/wild" className="btn btn-ghost !px-6 !py-3.5 !text-base">Claim one from the wild</Link>
           </div>
           <p className="mt-3 text-sm text-muted">Holders play free. No account, no app. About sixty seconds.</p>
+          <p className="mt-2 max-w-lg text-xs leading-relaxed text-muted">{BETA_NOTICE}</p>
         </div>
         <div className="relative">
           <div className="absolute -inset-6 -z-10 rounded-[40px] bg-[radial-gradient(closest-side,rgba(169,123,28,.18),transparent)]" />
@@ -70,14 +72,16 @@ export function Home() {
         </div>
       </section>
 
+      <p className="mt-3 text-center text-xs text-muted">Counters include labeled demo histories during the beta.</p>
+
       {/* ---------------------------------------------------------------- how it works */}
       <section className="mx-auto max-w-6xl px-4 py-16">
         <h2 className="font-display text-3xl font-semibold sm:text-4xl">How the buck moves</h2>
         <div className="mt-8 grid gap-5 md:grid-cols-3">
           {[
             ["01", "Write the foreword", "Release a buck for $2: one dollar rides with the bill, one keeps the lights on. You write the first four words and pick who gets it first, or set it loose in the wild."],
-            ["02", "Add four words", "Whoever holds it adds exactly four words that count. Little words like the, a, to and of ride free, so grammar still works. AI can suggest; it never writes."],
-            ["03", "Pass the buck", "Name the next person by email or release it to the wild. PayPal sends them a real dollar. When the payout lands, your words join the story."],
+            ["02", "Add four words", "Whoever holds it adds exactly four words that count. Little words like the, a, to and of ride free, so grammar still works. AI can suggest; you choose what goes in."],
+            ["03", "Pass the buck", "Name the next person by email or release it to the wild. PayPal sends the next holder a dollar in sandbox test money. When the payout lands, your words join the story."],
           ].map(([n, t, d]) => (
             <div key={n} className="card p-6">
               <div className="serial text-sm">{n}</div>
@@ -127,6 +131,18 @@ export function Home() {
             {data?.wild[0]?.teaser && <p className="mt-1 font-display italic text-muted">“…{data.wild[0].teaser}”</p>}
           </div>
           <Link href="/wild" className="btn btn-primary shrink-0">Go to the wild</Link>
+        </div>
+      </section>
+      <section id="faq" className="mx-auto max-w-3xl px-4 pb-20" aria-labelledby="faq-title">
+        <div className="eyebrow">Good questions</div>
+        <h2 id="faq-title" className="mt-2 font-display text-3xl font-semibold sm:text-4xl">A few words before you go.</h2>
+        <div className="mt-6 divide-y divide-line border-y border-line">
+          {FAQ.map(({ question, answer }) => (
+            <details key={question} className="group py-5">
+              <summary className="cursor-pointer font-display text-xl font-semibold">{question}</summary>
+              <p className="mt-3 leading-relaxed text-ink-2">{answer}</p>
+            </details>
+          ))}
         </div>
       </section>
     </div>

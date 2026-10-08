@@ -4,6 +4,10 @@ A dollar travels from person to person through PayPal. Every holder adds exactly
 
 Live: **https://fourwordpass.com** · Spec: [pass-the-buck-prd.md](pass-the-buck-prd.md)
 
+Brand assets, search metadata, crawler endpoints, and remaining launch checks: [SEO and launch](docs/seo-and-launch.md) · [Brand assets](docs/brand-assets.md).
+
+The live site is a sandbox beta: payment amounts are test money, while public posts and app emails are real. Published privacy, terms, beta, and support pages are maintained together in `shared/info.ts`. See [Policies and support](docs/policies-and-support.md) for the operator's manual inbox and privacy-request procedures.
+
 ## What changed from the PRD
 
 The concept and the core loop are built as specified. These are the deliberate departures:
@@ -108,7 +112,7 @@ Optional: `npx wrangler secret put ANTHROPIC_API_KEY` for a noticeably better bi
 
 ## Email
 
-Outbound mail goes through Cloudflare Email Sending, from `buck@fourwordpass.com` with the bill's serial as the sender name. Inbound mail to **any** `@fourwordpass.com` address is caught by Email Routing and stored by the Worker's `email()` handler. Read it with `GET /api/admin/inbox?to=someone@fourwordpass.com`. That makes it a real inbox for end-to-end tests: claim or pass a bill to `anything@fourwordpass.com`, then follow the link the bill emails. Replies to the bill land there too, if you ever want the bill to answer back.
+Outbound mail goes through Cloudflare Email Sending, from `buck@fourwordpass.com` with the bill's serial as the sender name and `support@fourwordpass.com` as Reply-To. Inbound mail to **any** `@fourwordpass.com` address is caught by Email Routing and stored by the Worker's `email()` handler. Read support messages with authenticated `GET /api/admin/inbox?to=support@fourwordpass.com`. Replies are manual; there is no automatic support response or inbox notification. The endpoint returns the latest 20 messages for the selected address. See [Policies and support](docs/policies-and-support.md) for operating procedures.
 
 ## Admin
 

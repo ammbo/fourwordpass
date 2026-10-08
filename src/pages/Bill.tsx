@@ -15,6 +15,9 @@ import { ShareButton } from "../components/ShareButton";
 import { type Active, Story, placeKey } from "../components/Story";
 import { TrailMap } from "../components/TrailMap";
 import { STATUS_LABEL, STATUS_TONE, age, longDate, nf, timeAgo } from "../lib";
+import { billMeta, pageMeta, SITE_URL } from "../../shared/site";
+import { updateMetadata } from "../components/PageMetadata";
+import { ParticipationTerms } from "../components/ParticipationTerms";
 
 export function BillPage() {
   const { serial: raw } = useParams<{ serial: string }>();
@@ -29,8 +32,16 @@ export function BillPage() {
   const fresh = useFreshHop(bill);
 
   useEffect(() => {
-    if (bill) document.title = `${bill.serial} · ${bill.personality.name} · Four Word Pass`;
-  }, [bill?.serial, bill?.personality.name]);
+    if (bill) updateMetadata(billMeta({
+      serial: bill.serial, name: bill.personality.name, hopCount: bill.hopCount,
+      teaser: bill.hops.slice(-6).map((h) => h.words).join(" "), createdAt: bill.createdAt,
+      modifiedAt: Math.max(bill.createdAt, bill.endedAt ?? 0, ...bill.hops.map((h) => h.confirmedAt)), isSeed: bill.isSeed,
+    }));
+  }, [bill]);
+
+  useEffect(() => {
+    if (error && !bill) updateMetadata({ ...pageMeta(`/b/${serial}`), title: "Bill not found · Four Word Pass", heading: "No bill by that serial.", noindex: true });
+  }, [error, bill, serial]);
 
   if (error && !bill)
     return (
@@ -50,7 +61,8 @@ export function BillPage() {
   const lastWords = bill.hops.slice(-2).map((h) => h.words).join(" ");
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-24 pt-6 sm:pt-10">
+    <article className="h-entry mx-auto max-w-6xl px-4 pb-24 pt-6 sm:pt-10">
+      <a className="u-url sr-only" href={`${SITE_URL}/b/${bill.serial}`}>Story permalink</a>
       {holderToken && !ended && (
         <div className="mb-8">
           <ContributePanel bill={bill} token={holderToken} onDone={refresh} />
@@ -86,7 +98,7 @@ export function BillPage() {
             {bill.featured && <span className="chip !border-gold/40 !text-gold">★ Featured</span>}
             {bill.isSeed && <span className="chip !text-muted" title="This bill's early history was simulated for the demo.">Demo history</span>}
           </div>
-          <h1 className="mt-3 font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">{bill.personality.name}</h1>
+          <h1 className="p-name mt-3 font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">{bill.personality.name}</h1>
           <p className="mt-2 font-display text-lg italic text-ink-2">“{bill.personality.tagline}”</p>
           {bill.theme && <p className="mt-2 text-sm text-muted">Prompt: {bill.theme}</p>}
 
@@ -116,7 +128,7 @@ export function BillPage() {
             </div>
           )}
           <p className="mt-4 text-sm text-muted">
-            Released {bill.originCity ? `in ${bill.originCity} ` : ""}on {longDate(bill.createdAt)} · {age(bill.createdAt)}
+            Released {bill.originCity ? `in ${bill.originCity} ` : ""}on <time className="dt-published" dateTime={new Date(bill.createdAt).toISOString()}>{longDate(bill.createdAt)}</time> · {age(bill.createdAt)}
             {bill.status === "holding" && bill.holderSince && <> · in someone's pocket{bill.holderPlace ? ` near ${bill.holderPlace}` : ""} for {timeAgo(bill.holderSince).replace(" ago", "")}</>}
             {bill.status === "wild" && bill.wildSince && <> · in the wild for {timeAgo(bill.wildSince).replace(" ago", "")}</>}
           </p>
@@ -154,7 +166,7 @@ export function BillPage() {
               <p className="text-sm text-muted">Pay it ForWord: {bill.hopCount} strangers, four words at a time. Hover any line to see who wrote it, and where.</p>
             </div>
           </div>
-          <Story bill={bill} active={active} onActive={setActive} freshIdx={fresh} />
+          <div className="e-content"><Story bill={bill} active={active} onActive={setActive} freshIdx={fresh} /></div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
           <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -212,7 +224,7 @@ export function BillPage() {
           }}
         />
       )}
-    </div>
+    </article>
   );
 }
 
@@ -294,9 +306,11 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isEmail(email)) return setError("We need your PayPal email to send you the dollar.");
+    if (!accepted) return setError("Confirm you're 18 or older and agree to the terms before claiming.");
     setBusy(true);
     setError(null);
     try {
@@ -309,11 +323,12 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
   return (
     <Modal title={`Claim ${serial}`} onClose={onClose}>
       <form onSubmit={submit}>
-        <p className="text-muted">We'll send $1 to your PayPal email. When it lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
+        <p className="text-muted">We'll send a $1 sandbox test payout to your email. No real money changes hands. When the handoff lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
         <input className="field mt-4" type="email" inputMode="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your PayPal email" />
+        <ParticipationTerms checked={accepted} onChange={setAccepted} />
         {error && <div className="mt-3 text-sm font-medium text-serial">{error}</div>}
         <button className="btn btn-primary mt-4 w-full !py-3.5" disabled={busy}>{busy ? "Claiming…" : "Claim it"}</button>
-        <p className="mt-2 text-center text-xs text-muted">No PayPal account? PayPal will invite you to claim the dollar. The story doesn't wait.</p>
+        <p className="mt-2 text-center text-xs text-muted">Look for the email from Four Word Pass. PayPal sandbox notifications do not reach ordinary inboxes.</p>
       </form>
     </Modal>
   );
