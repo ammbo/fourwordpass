@@ -30,9 +30,9 @@ export function Home() {
         <div className="animate-rise">
           <div className="eyebrow">Passage of the Buck</div>
           <h1 className="mt-3 font-display text-[2.7rem] font-semibold leading-[1.02] tracking-tight sm:text-6xl">
-            One dollar.
+            Pass the buck.
             <br />
-            Passed hand to hand.
+            Write a story.
             <br />
             <span className="italic text-ink-3">Four words at a time.</span>
           </h1>
