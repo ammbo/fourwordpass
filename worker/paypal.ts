@@ -109,6 +109,7 @@ export async function createPayout(
   env: Env,
   p: { passId: string; email: string; note: string; subject: string; message: string; since: number },
 ): Promise<{ batchId: string }> {
+  if (paypalMode(env) === "live") throw new PayPalError(503,LIVE_PAYMENT_NOTICE);
   if (paypalMode(env) === "mock") {
     if (p.email.includes("+flaky") && Date.now() - p.since < 8000) throw new PayPalError(503, "Service unavailable (simulated)");
     const outcome = p.email.includes("+fail") ? "F" : p.email.includes("+stuck") ? "P" : "S";

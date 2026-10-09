@@ -3,7 +3,11 @@ ALTER TABLE bills ADD COLUMN active_pass_id TEXT;
 ALTER TABLE bills ADD COLUMN checkout_mode TEXT;
 UPDATE bills SET checkout_mode = CASE WHEN checkout_order_id LIKE 'MOCKORDER-%' THEN 'mock' ELSE 'sandbox' END
  WHERE checkout_order_id IS NOT NULL;
-UPDATE bills SET active_pass_id = (SELECT id FROM passes WHERE bill_id = bills.id ORDER BY created_at DESC LIMIT 1)
+-- Do not mistake an older holder/declined claim for an interrupted incoming handoff.
+UPDATE bills SET active_pass_id = (SELECT id FROM passes WHERE bill_id = bills.id
+   AND (status = 'pending' OR (status = 'delivered' AND holder_notified = 0 AND declined_at IS NULL AND id IS NOT bills.holder_pass_id)
+     OR (status = 'failed' AND from_hop_id IN (SELECT id FROM hops WHERE status = 'pending')))
+   ORDER BY created_at DESC LIMIT 1)
  WHERE status = 'in_transit';
 ALTER TABLE hops ADD COLUMN fx_lease_until INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE follows ADD COLUMN verified INTEGER NOT NULL DEFAULT 1;

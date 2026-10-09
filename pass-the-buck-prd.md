@@ -119,8 +119,8 @@ This section answers the monitoring question directly: **you cannot observe tran
 
 ### 6.3 Funding model
 
-- **MVP (sandbox):** play money. A single sandbox business account funds all payouts. No user payments are collected.
-- **Production model (document, do not build for MVP):** relay pool. Each passer pays $1 into the pool (PayPal Orders API, captured by the app), and the app pays $1 out to the next holder. Self-sustaining; every hop remains a verified transaction through our integration. Plus the $1 platform fee at mint/fork time (Section 12).
+- **MVP (sandbox):** test money. Orders captures a $2 sandbox mint/fork checkout; one sandbox business account funds each later test payout. Explicit mock mode simulates both APIs.
+- **Proposed production model (not implemented):** hold the dollar at mint, record intermediate claims and handoffs internally, and make one final payout when the story is complete. Per-hop live transfers are not economically viable at this amount. Decide the final recipient and what happens when a story expires in the wild; account for checkout/payout fees and update launch disclosures. Live checkout and new payouts remain gated until this is implemented. The earlier per-hop collection/relay proposal is superseded.
 - Note in README: production Payouts requires PayPal approval for the Payouts feature. Sandbox is unrestricted.
 
 ### 6.4 The PayPal transaction note

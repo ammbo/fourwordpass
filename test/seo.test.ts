@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FAQ, PAGES, SITE_URL, billMeta, pageMeta, renderHead, structuredData } from "../shared/site";
+import { faqForMode, PAGES, SITE_URL, billMeta, pageMeta, renderHead, structuredData } from "../shared/site";
 import { serveSitemap } from "../worker/seo";
 
 describe("public page metadata", () => {
@@ -21,7 +21,7 @@ describe("public page metadata", () => {
 
   it("uses the visible FAQ text verbatim in structured data", () => {
     const schema = structuredData(PAGES["/"])["@graph"].find((node) => node["@type"] === "FAQPage");
-    expect(schema?.mainEntity).toEqual(FAQ.map(({ question, answer }) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })));
+    expect(schema?.mainEntity).toEqual(faqForMode("sandbox").map(({ question, answer }) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })));
   });
 
   it("escapes user story text in attributes, titles, and JSON-LD", () => {

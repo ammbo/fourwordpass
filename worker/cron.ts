@@ -27,8 +27,8 @@ export async function runCron(env: Env, ctx: Ctx) {
   });
 
   // 1. Payouts in flight: poll the ones the webhook hasn't settled, retry the ones a PayPal
-  //    hiccup stopped (left alone for 30s so a slow first attempt isn't raced), and fail any
-  //    that are stuck past the timeout.
+  //    hiccup stopped (left alone for 30s so a slow first attempt isn't raced).
+  //    Slow payouts stay reserved until PayPal reports an outcome.
   await safely("poll", async () => {
     const { results } = await env.DB.prepare(
       `SELECT * FROM passes WHERE (status = 'pending' OR paypal_status = 'UNCLAIMED') AND next_poll_at <= ?1
@@ -59,7 +59,7 @@ export async function runCron(env: Env, ctx: Ctx) {
     const { results } = await env.DB.prepare(
       `SELECT h.id FROM hops h JOIN bills b ON b.id = h.bill_id
        WHERE h.status = 'confirmed' AND h.inherited_from_hop_id IS NULL 
-         AND (h.diary_done = 0 OR h.followers_notified = 0 OR h.stamp_status = 'pending') AND h.confirmed_at < ?
+         AND (h.diary_done = 0 OR h.followers_notified = 0 OR h.stamp_status = 'pending' OR (b.goal_hops IS NOT NULL AND b.hop_count >= b.goal_hops AND b.goal_notified = 0)) AND h.confirmed_at < ?
        ORDER BY h.confirmed_at LIMIT 4`,
     ).bind(t - 45_000).all<{ id: string }>();
     for (const h of results) await safely(`fx:${h.id}`, () => engine.runHopEffects(env, h.id));

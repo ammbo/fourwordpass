@@ -12,6 +12,7 @@ vi.mock('../worker/util', async (actual) => ({...(await actual()),sleep: () => n
 vi.mock('../worker/paypal', async (actual) => ({...(await actual()),createPayout:vi.fn(async () => ({batchId:crypto.randomUUID()}))}));
 
 import * as engine from '../worker/engine';
+import { capToken, recoveryHash } from '../worker/util';
 import { getBill, getPass } from '../worker/db';
 import { createPayout, PayPalError } from '../worker/paypal';
 import { sendMail, queueMail } from '../worker/email';
@@ -72,10 +73,11 @@ describe('Lifecycle regressions (real SQL, stubbed external services)',()=>{
   it('returns a paid mint and creator key when the first recipient is rejected',async()=>{
     vi.mocked(createPayout).mockRejectedValue(new PayPalError(400,'invalid recipient'));
     const input={orderId:'MOCKORDER-audit',recoveryKey:'a'.repeat(32),creatorEmail:'creator@example.com',words:'red blue green orange',firstRecipient:'bad@example.com'};
+    await env.DB.prepare("INSERT INTO checkout_orders(order_id,recovery_hash,paypal_mode,purpose,created_at) VALUES (?,?,'mock','mint',?)").bind(input.orderId,await recoveryHash(input.recoveryKey),Date.now()).run();
     const out = await engine.mintBill(env,ctx,place,input);
     expect(out.creatorToken).toBeTruthy();
     expect(await engine.mintBill(env,ctx,place,input)).toEqual(out);
-    await expect(engine.mintBill(env,ctx,place,{...input,recoveryKey:'b'.repeat(32)})).rejects.toThrow('another checkout');
+    await expect(engine.mintBill(env,ctx,place,{...input,recoveryKey:'b'.repeat(32)})).rejects.toThrow('original checkout');
     await flush();
     const minted=db.sqlite.prepare('SELECT serial,status,checkout_order_id FROM bills').all();
     const creatorEmailSent=vi.mocked(queueMail).mock.calls.some(([,m])=>m.kind==='creator');
@@ -101,6 +103,14 @@ describe('Lifecycle regressions (real SQL, stubbed external services)',()=>{
     await engine.writeBillsOwnEnding(env,old);
     expect((await getBill(env,'b'))!.status).toBe('holding');
   });
+  it('keeps automatic expiry at fourteen days while preserving an explicit admin ending',async()=>{
+    const fresh=(await bill('wild'))!;
+    expect(await engine.writeBillsOwnEnding(env,fresh)).toBe(false);
+    expect((await getBill(env,'b'))!.status).toBe('wild');
+    expect(await engine.writeBillsOwnEnding(env,(await getBill(env,'b'))!,true)).toBe(true);
+    expect((await getBill(env,'b'))!.status).toBe('eulogized');
+    expect(db.sqlite.prepare("SELECT COUNT(*) n FROM notification_jobs WHERE kind='end'").get()?.n).toBe(1);
+  });
   it('keeps slow payouts reserved until their late success',async()=>{
     await bill('in_transit');
     db.sqlite.prepare("INSERT INTO passes(id,bill_id,kind,recipient_email,status,paypal_mode,created_at,next_poll_at,payout_batch_id) VALUES('late','b','claim','next@example.com','pending','mock',?,1,?)").run(Date.now()-3*3600000,'MOCK'+(Date.now()-3*3600000).toString(36).toUpperCase()+'P');
@@ -121,6 +131,29 @@ describe('Lifecycle regressions (real SQL, stubbed external services)',()=>{
     await engine.applyPayoutState(env,ctx,(await getPass(env,'reversed'))!,{...settled,status:'RETURNED'});
     expect((await getPass(env,'reversed'))!.paypal_status).toBe('RETURNED');
     expect((await getBill(env,'b'))!.holder_pass_id).toBe('reversed');
+  });
+  it('preserves a reversal committed while a success handler is still running',async()=>{
+    await bill('in_transit');
+    db.sqlite.prepare("INSERT INTO passes(id,bill_id,kind,recipient_email,status,paypal_mode,created_at) VALUES('raced','b','claim','next@example.com','pending','mock',?)").run(Date.now());
+    db.sqlite.exec("UPDATE bills SET active_pass_id='raced' WHERE id='b'");
+    const originalBatch=db.batch.bind(db);
+    vi.spyOn(db,'batch').mockImplementationOnce(async statements=>{
+      // Another handler wins after this handler reads the pass, before its transaction.
+      db.sqlite.exec("UPDATE passes SET status='failed',paypal_status='RETURNED' WHERE id='raced'; UPDATE bills SET status='wild',active_pass_id=NULL WHERE id='b'");
+      return originalBatch(statements);
+    });
+    await engine.applyPayoutState(env,ctx,(await getPass(env,'raced'))!,settled);
+    expect((await getPass(env,'raced'))!.paypal_status).toBe('RETURNED');
+    expect((await getBill(env,'b'))!.status).toBe('wild');
+  });
+  it('repairs a legacy failed settlement without sending another payout',async()=>{
+    await bill('in_transit');
+    db.sqlite.prepare("INSERT INTO passes(id,bill_id,kind,recipient_email,status,paypal_mode,paypal_status,created_at) VALUES('interrupted','b','claim','next@example.com','failed','mock','FAILED',?)").run(Date.now());
+    db.sqlite.exec("UPDATE bills SET active_pass_id='interrupted' WHERE id='b'");
+    await runCron(env,ctx);
+    expect((await getBill(env,'b'))!.status).toBe('wild');
+    expect((await getBill(env,'b'))!.active_pass_id).toBeNull();
+    expect(createPayout).not.toHaveBeenCalled();
   });
 
   it('backfills real contributions on a seeded bill',async()=>{
@@ -147,6 +180,83 @@ describe('Lifecycle regressions (real SQL, stubbed external services)',()=>{
     expect(seen.size).toBe(5001);
     const next=await publicBill(env,(await getBill(env,'b'))!,{after:page.history.newerAfter!});
     expect(next.hops[0].idx).toBe(2);
+    expect((await publicBill(env,(await getBill(env,'b'))!,{after:999999})).hops.at(-1)?.idx).toBe(5001);
+    expect((await publicBill(env,(await getBill(env,'b'))!,{before:0})).hops[0].idx).toBe(1);
+    db.sqlite.exec("UPDATE hops SET city='Paris',country='FR' WHERE idx=1; UPDATE hops SET city='New York',country='US' WHERE idx=5001; UPDATE bills SET status='holding',holder_pass_id='holder' WHERE id='b'");
+    const earlier=await publicBill(env,(await getBill(env,'b'))!,{after:0});
+    expect(earlier.placeCount).toBe(2);
+    expect(earlier.holderPlace).toContain('New York');
+  });
+
+  it('leaves a wild bill claimable if reservation is interrupted',async()=>{
+    const snapshot=(await bill('wild'))!;
+    db.failNextBatch=true;
+    await expect(engine.claimFromWild(env,ctx,snapshot,'reader@example.com')).rejects.toThrow('Injected');
+    expect((await getBill(env,'b'))!.status).toBe('wild');
+    expect(db.sqlite.prepare("SELECT COUNT(*) n FROM passes WHERE kind='claim'").get()?.n).toBe(0);
+    expect(createPayout).not.toHaveBeenCalled();
+  });
+  it('resumes a captured mint after atomic initialization fails',async()=>{
+    const input={orderId:'MOCKORDER-resume',recoveryKey:'r'.repeat(32),creatorEmail:'creator@example.com',words:'amber robots chase comets',firstRecipient:null};
+    await env.DB.prepare("INSERT INTO checkout_orders(order_id,recovery_hash,paypal_mode,purpose,created_at) VALUES (?,?,'mock','mint',?)")
+      .bind(input.orderId,await recoveryHash(input.recoveryKey),Date.now()).run();
+    db.failNextBatch=true;
+    await expect(engine.mintBill(env,ctx,place,input)).rejects.toThrow('Injected');
+    expect(db.sqlite.prepare("SELECT COUNT(*) n FROM bills").get()?.n).toBe(0);
+    const out=await engine.mintBill(env,ctx,place,input);
+    const replay=await engine.mintBill(env,ctx,place,input);
+    expect(replay).toEqual(out);
+    expect(db.sqlite.prepare("SELECT COUNT(*) n FROM bills").get()?.n).toBe(1);
+    expect(db.sqlite.prepare("SELECT COUNT(*) n FROM hops WHERE status='confirmed'").get()?.n).toBe(1);
+  });
+  it('retries interrupted diary work without claiming it completed',async()=>{
+    await bill('wild');
+    db.sqlite.exec("INSERT INTO hops(id,bill_id,idx,status,words,content_words,created_at,confirmed_at) VALUES('retry-hop','b',1,'confirmed','amber robots chase comets',4,1,1)");
+    vi.mocked(ai.writeDiary).mockRejectedValueOnce(new Error('AI interruption'));
+    await expect(engine.runHopEffects(env,'retry-hop')).rejects.toThrow('interruption');
+    expect(db.sqlite.prepare("SELECT diary_done,fx_lease_until FROM hops WHERE id='retry-hop'").get()).toMatchObject({diary_done:0,fx_lease_until:0});
+    await engine.runHopEffects(env,'retry-hop');
+    await engine.runHopEffects(env,'retry-hop');
+    expect(db.sqlite.prepare("SELECT COUNT(*) n FROM diary WHERE hop_id='retry-hop'").get()?.n).toBe(1);
+  });
+  it('requires inbox confirmation and preserves private preferences and opt-outs',async()=>{
+    const b=(await bill('wild'))!;
+    await engine.follow(env,b,'reader@example.com','every_hop');
+    const f=db.sqlite.prepare("SELECT * FROM follows WHERE email='reader@example.com'").get()!;
+    expect(f.verified).toBe(0);
+    expect((await getBill(env,'b'))!.follower_count).toBe(0);
+    const {default: worker}=await import('../worker/index');
+    const token=await capToken(env,'follow',String(f.id));
+    const save=(preference:string)=>worker.fetch(new Request(`http://localhost/api/follows/${f.id}`,{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:token,preference})}),env,ctx);
+    expect((await save('every_hop')).status).toBe(200);
+    expect((await getBill(env,'b'))!.follower_count).toBe(1);
+    await engine.follow(env,b,'reader@example.com','on_end');
+    expect(db.sqlite.prepare("SELECT preference FROM follows WHERE id=?").get(f.id)?.preference).toBe('every_hop');
+    expect((await save('unfollow')).status).toBe(200);
+    const calls=vi.mocked(queueMail).mock.calls.length;
+    await engine.follow(env,b,'reader@example.com','on_end');
+    expect(queueMail).toHaveBeenCalledTimes(calls);
+    expect(db.sqlite.prepare("SELECT verified,opted_out FROM follows WHERE id=?").get(f.id)).toMatchObject({verified:0,opted_out:1});
+  });
+  it('queues follower updates across multiple pages without the old 500-person cutoff',async()=>{
+    await bill('complete');
+    db.sqlite.exec("WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<601) INSERT INTO follows(id,bill_id,email,preference,created_at) SELECT printf('f%04d',i),'b','reader'||i||'@example.com','on_end',1 FROM n; INSERT INTO notification_jobs(id,bill_id,kind,details) VALUES('end:b:end','b','end','{}')");
+    for(let page=0;page<7;page++) await engine.runNotificationJobs(env);
+    expect(queueMail).toHaveBeenCalledTimes(601);
+    expect(new Set(vi.mocked(queueMail).mock.calls.map(([,m])=>m.deliveryKey)).size).toBe(601);
+    expect(db.sqlite.prepare("SELECT done FROM notification_jobs WHERE id='end:b:end'").get()?.done).toBe(1);
+    await engine.runNotificationJobs(env);
+    expect(queueMail).toHaveBeenCalledTimes(601);
+  });
+  it('rejects malformed request bodies with 400 before a payment is created',async()=>{
+    const {default: worker}=await import('../worker/index');
+    env.RL_WRITE={limit:async()=>({success:true})};
+    const request=(payload:unknown)=>worker.fetch(new Request('http://localhost/api/bills',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),env,ctx);
+    expect((await request({words:42})).status).toBe(400);
+    expect((await request({words:'amber robots chase comets',creatorEmail:['bad']})).status).toBe(400);
+    expect(createPayout).not.toHaveBeenCalled();
   });
 
 });

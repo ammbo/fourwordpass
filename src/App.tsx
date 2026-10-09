@@ -30,6 +30,11 @@ function BillRoute() {
   return <BillPage key={serial.toUpperCase()} />;
 }
 
+function FollowRoute() {
+  const {id} = useParams<{id: string}>();
+  return <FollowManage key={id} />;
+}
+
 export function App() {
   return <PaymentProvider><AppContents /></PaymentProvider>;
 }
@@ -65,7 +70,7 @@ function AppContents() {
           <Route path="/wild" component={Wild} />
           <Route path="/books" component={BooksRoute} />
           <Route path="/b/:serial" component={BillRoute} />
-          <Route path="/f/:id" component={FollowManage} />
+          <Route path="/f/:id" component={FollowRoute} />
           {INFO_LINKS.map(({ path }) => <Route key={path} path={path} component={Info} />)}
           <Route component={NotFound} />
         </Switch>

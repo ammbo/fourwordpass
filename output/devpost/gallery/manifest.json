@@ -1,0 +1,143 @@
+{
+  "capturedFrom": "https://fourwordpass.com",
+  "viewport": {
+    "width": 1290,
+    "height": 860,
+    "deviceScaleFactor": 1.5
+  },
+  "screenshots": [
+    {
+      "file": "01-passage-of-the-buck.png",
+      "title": "Passage of the Buck",
+      "caption": "A dollar carries a story from person to person, four words at a time. The hosted prototype uses PayPal sandbox test money.",
+      "notes": "",
+      "source": "https://fourwordpass.com/",
+      "capturedAt": "2026-10-09T20:19:02.945Z",
+      "scrollY": 0,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1893250
+    },
+    {
+      "file": "02-meet-wendell.png",
+      "title": "Meet Wendell the Damp",
+      "caption": "Every bill gets a name, a voice and a journey. Wendell is a labeled demo bill with simulated early history.",
+      "notes": "",
+      "source": "https://fourwordpass.com/b/FWP-0002",
+      "capturedAt": "2026-10-09T20:19:09.591Z",
+      "scrollY": 0,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1964126
+    },
+    {
+      "file": "03-story-and-passage.png",
+      "title": "The Story and The Passage",
+      "caption": "Read the story beside its city-by-city route, then inspect a hop and its masked PayPal receipt.",
+      "notes": "FWP-0002 has labeled demo history; its latest displayed receipt is a PayPal sandbox payout.",
+      "source": "https://fourwordpass.com/b/FWP-0002",
+      "capturedAt": "2026-10-09T20:23:56.771Z",
+      "scrollY": 494,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1833762
+    },
+    {
+      "file": "04-four-words-that-count.png",
+      "title": "Four words that count",
+      "caption": "The live word counter counts “lights” and “dimmed”; connecting words ride free.",
+      "notes": "",
+      "source": "https://fourwordpass.com/release",
+      "capturedAt": "2026-10-09T20:20:56.303Z",
+      "scrollY": 0,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1200062
+    },
+    {
+      "file": "05-diary-and-passport.png",
+      "title": "The Diary and The Passport",
+      "caption": "The bill narrates its travels in an AI-written diary and collects illustrated city stamps.",
+      "notes": "Wendell is a demo bill. The newest stamp is visibly still inking; completed historical stamps are shown as rendered.",
+      "source": "https://fourwordpass.com/b/FWP-0002",
+      "capturedAt": "2026-10-09T20:23:59.836Z",
+      "scrollY": 1922,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1963913
+    },
+    {
+      "file": "06-join-from-the-wild.png",
+      "title": "Join from the wild",
+      "caption": "A bill released to the wild waits for a stranger to claim it and add the next four words.",
+      "notes": "Only the public list is opened; no bill is claimed.",
+      "source": "https://fourwordpass.com/wild",
+      "capturedAt": "2026-10-09T20:21:02.691Z",
+      "scrollY": 0,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1390498
+    },
+    {
+      "file": "07-sandbox-checkout.png",
+      "title": "Sandbox checkout",
+      "caption": "Starting a story costs $2 in PayPal sandbox test money. The page provides a published test card and PayPal’s checkout button.",
+      "notes": "Unsubmitted form with example.com sample values. No order was created, no payment was submitted and no email was sent.",
+      "source": "https://fourwordpass.com/release",
+      "capturedAt": "2026-10-09T20:20:59.040Z",
+      "scrollY": 1125,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 644982
+    },
+    {
+      "file": "08-open-books.png",
+      "title": "Open Books",
+      "caption": "A public ledger shows the observed PayPal sandbox totals and payments over time. Demo payments are excluded.",
+      "notes": "At capture: $0 paid in, $3 paid out, 3 sandbox payouts. These are current test counts, not adoption or real-money metrics.",
+      "source": "https://fourwordpass.com/books",
+      "capturedAt": "2026-10-09T20:21:10.701Z",
+      "scrollY": 60,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1005132
+    },
+    {
+      "file": "09-paypal-ledger.png",
+      "title": "The PayPal ledger",
+      "caption": "The ledger exposes PayPal status, masked references, landing times and webhook confirmation without publishing email addresses.",
+      "notes": "Gallery card with an unaltered screenshot of the live ledger and a caption outside it. The date and empty hop columns were hidden with AG Grid’s normal drag-out interaction to show payment verification. Three observed sandbox payouts.",
+      "source": "https://fourwordpass.com/books",
+      "capturedAt": "2026-10-09T20:26:05.641Z",
+      "scrollY": 1222,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 296557
+    },
+    {
+      "file": "10-a-bills-own-eulogy.png",
+      "title": "A bill’s own eulogy",
+      "caption": "A bill that has stopped traveling writes a eulogy in its own voice. Valentine’s journey is labeled demo history.",
+      "notes": "",
+      "source": "https://fourwordpass.com/b/FWP-0001",
+      "capturedAt": "2026-10-09T20:24:16.768Z",
+      "scrollY": 514,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 1676580
+    },
+    {
+      "file": "11-fork-the-story.png",
+      "title": "Fork the story",
+      "caption": "Start a new branch from a chosen hop and carry the story in another direction.",
+      "notes": "Fork dialog only. No checkout, branch, payout or email is created.",
+      "source": "https://fourwordpass.com/b/FWP-0002",
+      "capturedAt": "2026-10-09T20:22:10.676Z",
+      "scrollY": 554,
+      "width": 1935,
+      "height": 1290,
+      "bytes": 558806
+    }
+  ],
+  "browserErrors": []
+}

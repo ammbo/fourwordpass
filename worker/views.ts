@@ -1,6 +1,6 @@
 // Public projections. Emails, payout ids and ai_assisted flags never leave here.
 
-import type { BillSummary, CreatorView, HolderView, PassFailure, PublicBill, PublicHop, Receipt } from "../shared/types";
+import type { BillSummary, CreatorView, HolderView, PassFailure, PayPalMode, PublicBill, PublicHop, Receipt } from "../shared/types";
 import { maskEmail } from "../shared/words";
 import { type BillRow, type PassRow, getPass, latestPendingPass, personalityOf } from "./db";
 import { TIMED_OUT } from "./engine";
@@ -34,7 +34,7 @@ export async function publicBill(env: Env, bill: BillRow, cursor: StoryCursor = 
   // The receipt shown on a hop is the payout that put the bill in its writer's hands.
   // The creator's opening hop shows the payout that carried it to the first holder.
   const mintReceipt = passesRes.results.length
-    ? await env.DB.prepare("SELECT from_hop_id, id FROM passes WHERE bill_id = ? AND kind IN ('mint','fork') AND status = 'delivered'").bind(bill.id).first<{ from_hop_id: string; id: string }>()
+    ? await env.DB.prepare("SELECT from_hop_id, id FROM passes WHERE bill_id = ? AND kind IN ('mint','fork') LIMIT 1").bind(bill.id).first<{ from_hop_id: string; id: string }>()
     : null;
 
   const hops: PublicHop[] = hopsRes.results.map((h) => ({
@@ -57,13 +57,15 @@ export async function publicBill(env: Env, bill: BillRow, cursor: StoryCursor = 
 
   let holderPlace: string | null = null;
   if (bill.status === "holding" && bill.holder_pass_id) {
-    const last = hopsRes.results[hopsRes.results.length - 1];
+    const last = await env.DB.prepare("SELECT city, region, country FROM hops WHERE bill_id = ? AND status = 'confirmed' ORDER BY idx DESC LIMIT 1")
+      .bind(bill.id).first<{city: string | null; region: string | null; country: string | null}>();
     holderPlace = last ? placeLabel(last) : bill.origin_city;
   }
 
   return {
     paymentMode: env.PAYPAL_MODE as PublicBill["paymentMode"],
     history: page.history,
+    placeCount: page.placeCount,
     serial: bill.serial,
     status: bill.status,
     theme: bill.theme,
@@ -131,7 +133,7 @@ export async function holderView(env: Env, req: Request, bill: BillRow, token: s
         state: "in_transit",
         recipient: out ? maskEmail(out.recipient_email) : "",
         paypalStatus: out?.paypal_status ?? null,
-        mode: out?.paypal_mode ?? "sandbox",
+        mode: out?.paypal_mode ?? (env.PAYPAL_MODE as PayPalMode),
         words: hop?.words ?? "",
       };
     }

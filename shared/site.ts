@@ -1,5 +1,5 @@
-import type { PayPalMode } from "./types";
-import { paymentNotice } from "./payments";
+import type { PayPalMode } from "./types.ts";
+import { paymentNotice } from "./payments.ts";
 import { INFO_PAGES } from "./info.ts";
 
 /** Public brand and metadata. Never pass capability tokens or private bill fields here. */

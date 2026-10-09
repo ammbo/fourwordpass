@@ -116,7 +116,7 @@ export function BillPage() {
               [nf(bill.hopCount), "hops"],
               [nf(bill.wordCount), "words"],
               [nf(bill.followerCount), "watching"],
-              [String(new Set(bill.hops.map((h) => h.place)).size), "places"],
+              [nf(bill.placeCount), "places"],
             ].map(([n, l]) => (
               <div key={l} className="rounded-xl border border-line bg-paper-3 py-2.5">
                 <dt className="sr-only">{l}</dt>
@@ -356,7 +356,7 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
     <Modal title={`Claim ${serial}`} onClose={onClose}>
       <form onSubmit={submit}>
         <p className="text-muted">{payoutDescription(mode)} {paymentNotice(mode)} When the handoff lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
-        <input className="field mt-4" type="email" inputMode="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your PayPal email" />
+        <input className="field mt-4" type="email" inputMode="email" autoFocus aria-label="Email for your holder link" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={mode === "mock" ? "your email" : "your PayPal email"} />
         <ParticipationTerms checked={accepted} onChange={setAccepted} />
         {error && <div className="mt-3 text-sm font-medium text-serial">{error}</div>}
         <button className="btn btn-primary mt-4 w-full !py-3.5" disabled={busy || mode === "live" || !mode}>{busy ? "Claiming…" : "Claim it"}</button>
@@ -368,16 +368,25 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
 
 function ResendLink({ serial }: { serial: string }) {
   const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const resend = async () => {
+    setBusy(true); setError(null);
+    try { await api.resend(serial); setSent(true); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
   return (
     <p className="mt-3 text-sm text-muted">
       {sent ? (
         "If you're holding it, your link is on its way."
       ) : (
         <>
-          Holding this one and only got PayPal's email?{" "}
-          <button type="button" className="font-semibold text-ink underline-offset-4 hover:underline" onClick={() => api.resend(serial).then(() => setSent(true))}>
-            Email me my link
+          Holding this one and missing your link?{" "}
+          <button type="button" disabled={busy} className="font-semibold text-ink underline-offset-4 hover:underline" onClick={resend}>
+            {busy ? "Sending…" : "Email me my link"}
           </button>
+          {error && <span role="alert" className="mt-1 block text-serial">{error}</span>}
         </>
       )}
     </p>

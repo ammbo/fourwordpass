@@ -21,6 +21,10 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
     api.creator(bill.serial, token).then(setView, () => setView({ valid: false }));
   }, [bill.serial, token, bill.status, bill.version]);
 
+  useEffect(() => {
+    if (bill.status === "holding") setSent(null);
+  }, [bill.status, bill.holderSince]);
+
   const goalHit = bill.goalHops != null && bill.hopCount >= bill.goalHops;
   useEffect(() => {
     if (goalHit) setOpen(true);

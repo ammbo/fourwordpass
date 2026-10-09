@@ -1,6 +1,6 @@
 // The bill lifecycle. Every state change goes through here.
 //
-// Model:
+// Sandbox/mock model (new live payments are gated pending the held-dollar design):
 //  - A *pass* is $1 moving from the platform to a person (PayPal payout).
 //  - A *hop* is four words written by whoever holds the bill.
 //  - Words leave your hands one of two ways: a payout to the next person lands
@@ -119,9 +119,9 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
 
   if (!input.recoveryKey || input.recoveryKey.length < 32 || input.recoveryKey.length > 128) throw new UserError("This checkout needs a recovery key. Refresh before paying.");
   const hash = await recoveryHash(input.recoveryKey);
-  const checkout = await env.DB.prepare("SELECT recovery_hash,purpose FROM checkout_orders WHERE order_id = ?").bind(input.orderId)
-    .first<{recovery_hash: string; purpose: string}>();
-  if (!checkout || checkout.recovery_hash !== hash || checkout.purpose !== (parent ? "fork" : "mint")) throw new UserError("Use the private recovery key from the original checkout.",403);
+  const checkout = await env.DB.prepare("SELECT recovery_hash,purpose,paypal_mode FROM checkout_orders WHERE order_id = ?").bind(input.orderId)
+    .first<{recovery_hash: string; purpose: string; paypal_mode: string}>();
+  if (!checkout || checkout.recovery_hash !== hash || checkout.purpose !== (parent ? "fork" : "mint") || checkout.paypal_mode !== paypalMode(env)) throw new UserError("Use the private recovery key from the original checkout.",403);
   await env.DB.prepare(`INSERT OR IGNORE INTO mint_attempts (order_id,recovery_hash,input_json,place_json,bill_id,paypal_mode,created_at)
     VALUES (?,?,?,?,?,?,?)`).bind(input.orderId, hash, JSON.stringify(input), JSON.stringify(place), newId(), paypalMode(env), now()).run();
   const attempt = (await env.DB.prepare("SELECT * FROM mint_attempts WHERE order_id = ?").bind(input.orderId)
@@ -201,12 +201,12 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
       unsubscribeUrl: appUrl(env, `/f/${followId}?t=${await capToken(env, "follow", followId)}`),
     });
   try {
-  if (bill.status === "in_transit" && !bill.active_pass_id && firstRecipient) {
-    // A rejected first address sends the paid story wild; the creator still gets their key.
-    await startPass(env, ctx, bill, { kind: parent ? "fork" : "mint", email: firstRecipient, fromHopId: hopId, senderPassId: null }, false);
-  } else if (bill.status === "in_transit" && !bill.active_pass_id) {
-    await releaseToWild(env, ctx, bill, hopId, null);
-  }
+    if (bill.status === "in_transit" && !bill.active_pass_id && firstRecipient) {
+      // A rejected first address sends the paid story wild; the creator still gets their key.
+      await startPass(env, ctx, bill, { kind: parent ? "fork" : "mint", email: firstRecipient, fromHopId: hopId, senderPassId: null }, false);
+    } else if (bill.status === "in_transit" && !bill.active_pass_id) {
+      await releaseToWild(env, ctx, bill, hopId, null);
+    }
   } catch (e) {
     const current = await getBill(env,billId);
     if (!current || (current.status === "in_transit" && !current.active_pass_id)) throw e;
@@ -292,7 +292,7 @@ async function quickPoll(env: Env, ctx: Ctx, passId: string) {
   }
 }
 
-/** Move an in-flight pass along: retry the payout if PayPal hiccuped, otherwise poll it. Gives up after PASS_TIMEOUT. */
+/** Retry or poll the same payout. A timeout flags the delay without releasing its reservation. */
 export async function advancePass(env: Env, ctx: Ctx, pass: PassRow) {
   if (pass.paypal_mode !== paypalMode(env)) return;
   const backoff = pass.status === "delivered" ? 6 * HOUR : Math.min(15 * 60_000, 30_000 * 2 ** Math.min(10, Math.max(0, pass.poll_count - 4)));
@@ -328,7 +328,7 @@ export async function applyPayoutState(env: Env, ctx: Ctx, snapshot: PassRow, st
   // A verified later financial outcome updates the ledger without rewinding the story.
   // Ignore stale pending/unclaimed events after a more definitive outcome.
   if (pass.paypal_status === "SUCCESS" && state.status !== "SUCCESS" && !FAILED.has(state.status)) return;
-  if (FAILED.has(pass.paypal_status ?? "") && !["SUCCESS", "RETURNED", "REFUNDED", "REVERSED"].includes(state.status)) return;
+  if (FAILED.has(pass.paypal_status ?? "") && state.status !== pass.paypal_status && !["SUCCESS", "RETURNED", "REFUNDED", "REVERSED"].includes(state.status)) return;
   if (DELIVERED.has(state.status)) return deliverPass(env, ctx, pass, state);
   if (FAILED.has(state.status)) return failPass(env, ctx, pass, state);
   if (pass.status === "pending" && state.status !== pass.paypal_status) {
@@ -343,14 +343,17 @@ async function deliverPass(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState
   const t = now();
   const stmts = [env.DB.prepare(
     `UPDATE passes SET status = 'delivered', paypal_status = ?, payout_item_id = COALESCE(?, payout_item_id),
-       transaction_id = COALESCE(?, transaction_id), error = NULL, settled_at = COALESCE(settled_at, ?) WHERE id = ?`,
-  ).bind(state.status, state.itemId, state.transactionId, t, pass.id)];
+       transaction_id = COALESCE(?, transaction_id), error = NULL, settled_at = COALESCE(settled_at, ?) WHERE id = ?
+       AND COALESCE(paypal_status, '') NOT IN ('RETURNED','REFUNDED','REVERSED')
+       AND (? = 'SUCCESS' OR COALESCE(paypal_status, '') NOT IN ('SUCCESS','FAILED','BLOCKED','DENIED','CANCELED'))`,
+  ).bind(state.status, state.itemId, state.transactionId, t, pass.id, state.status)];
   if (pass.from_hop_id) stmts.push(confirmHopStmt(env, pass.from_hop_id, pass.bill_id,
-    "EXISTS (SELECT 1 FROM bills WHERE id = ?4 AND status = 'in_transit' AND active_pass_id = ?5)", [pass.bill_id, pass.id]));
+    "EXISTS (SELECT 1 FROM bills b JOIN passes p ON p.id = b.active_pass_id WHERE b.id = ?4 AND b.status = 'in_transit' AND p.id = ?5 AND p.status = 'delivered')", [pass.bill_id, pass.id]));
   stmts.push(
     env.DB.prepare(`UPDATE bills SET status = 'holding', holder_pass_id = ?, holder_since = ?, held_via_wild = ?,
        wild_since = NULL, nag_level = 0, returned_pass_id = NULL, active_pass_id = NULL
-       WHERE id = ? AND status = 'in_transit' AND active_pass_id = ?`)
+       WHERE id = ? AND status = 'in_transit' AND active_pass_id = ?
+         AND EXISTS (SELECT 1 FROM passes WHERE id = bills.active_pass_id AND status = 'delivered')`)
       .bind(pass.id, t, pass.kind === "claim" ? 1 : 0, pass.bill_id, pass.id),
     recountStmt(env, pass.bill_id),
   );
@@ -363,19 +366,21 @@ async function failPass(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState) {
   const bill = (await getBill(env, pass.bill_id))!;
   const stmts = [env.DB.prepare(
     `UPDATE passes SET status = 'failed', paypal_status = ?, payout_item_id = COALESCE(?, payout_item_id),
-      transaction_id = COALESCE(?, transaction_id), error = ?, settled_at = COALESCE(settled_at, ?) WHERE id = ?`,
-  ).bind(state.status, state.itemId, state.transactionId, state.error ?? state.status, t, pass.id)];
+      transaction_id = COALESCE(?, transaction_id), error = ?, settled_at = COALESCE(settled_at, ?) WHERE id = ?
+      AND (COALESCE(paypal_status, '') NOT IN ('RETURNED','REFUNDED','REVERSED') OR ? IN ('RETURNED','REFUNDED','REVERSED'))`,
+  ).bind(state.status, state.itemId, state.transactionId, state.error ?? state.status, t, pass.id, state.status)];
   if (pass.kind === "pass") {
     stmts.push(env.DB.prepare(`UPDATE hops SET status = 'void' WHERE id = ? AND status = 'pending' AND EXISTS
-      (SELECT 1 FROM bills WHERE id = ? AND active_pass_id = ?)`)
+      (SELECT 1 FROM bills b JOIN passes p ON p.id = b.active_pass_id WHERE b.id = ? AND p.id = ? AND p.status = 'failed')`)
       .bind(pass.from_hop_id, bill.id, pass.id));
   } else if (pass.from_hop_id) {
     stmts.push(confirmHopStmt(env, pass.from_hop_id, bill.id,
-      "EXISTS (SELECT 1 FROM bills WHERE id = ?4 AND active_pass_id = ?5)", [bill.id, pass.id]));
+      "EXISTS (SELECT 1 FROM bills b JOIN passes p ON p.id = b.active_pass_id WHERE b.id = ?4 AND p.id = ?5 AND p.status = 'failed')", [bill.id, pass.id]));
   }
   stmts.push(env.DB.prepare(`UPDATE bills SET status = ?, active_pass_id = NULL,
      wild_since = CASE WHEN ? = 'wild' THEN ? ELSE wild_since END
-     WHERE id = ? AND status = 'in_transit' AND active_pass_id = ?`)
+     WHERE id = ? AND status = 'in_transit' AND active_pass_id = ?
+       AND EXISTS (SELECT 1 FROM passes WHERE id = bills.active_pass_id AND status = 'failed')`)
      .bind(pass.kind === "pass" ? "holding" : "wild", pass.kind === "pass" ? "holding" : "wild", t, bill.id, pass.id), recountStmt(env, bill.id));
   const result = await env.DB.batch(stmts);
   if (!result[stmts.length - 2].meta.changes) return; // Financial corrections must not move a story that has already moved on.
@@ -528,14 +533,13 @@ export async function runHopEffects(env: Env, hopId: string) {
     .bind(now() + 300_000, hopId, now()).run();
   if (!leased.meta.changes) return;
   try {
-  const bill = (await getBill(env, hop.bill_id))!;
-  const pers = personalityOf(bill);
-  const place = hopPlace(hop);
-  let motif = `${place} street scene`;
-  let diaryLine: string | null = null;
+    const bill = (await getBill(env, hop.bill_id))!;
+    const pers = personalityOf(bill);
+    const place = hopPlace(hop);
+    let motif = `${place} street scene`;
+    let diaryLine: string | null = null;
 
-  if (!hop.diary_done) {
-    {
+    if (!hop.diary_done) {
       const tail = await storyTail(env, bill.id, 60);
       const d = await ai.writeDiary(env, {
         pers, serial: bill.serial, words: hop.words, note: hop.note, place, hopNumber: hop.idx ?? bill.hop_count,
@@ -547,20 +551,19 @@ export async function runHopEffects(env: Env, hopId: string) {
       await env.DB.prepare("UPDATE hops SET diary_done = 1 WHERE id = ?").bind(hopId).run();
       await touch(env, bill.id).run();
     }
-  }
 
-  if (!hop.followers_notified) {
-    await notifyFollowers(env, bill, "hop", { hop, diaryLine });
-    await env.DB.prepare("UPDATE hops SET followers_notified = 1 WHERE id = ?").bind(hopId).run();
-  }
+    if (!hop.followers_notified) {
+      await notifyFollowers(env, bill, "hop", { hop, diaryLine });
+      await env.DB.prepare("UPDATE hops SET followers_notified = 1 WHERE id = ?").bind(hopId).run();
+    }
 
-  if (bill.goal_hops && bill.hop_count >= bill.goal_hops && !bill.goal_notified) {
-    await goalReached(env, bill);
-    await env.DB.prepare("UPDATE bills SET goal_notified = 1 WHERE id = ?").bind(bill.id).run();
-  }
+    if (bill.goal_hops && bill.hop_count >= bill.goal_hops && !bill.goal_notified) {
+      await goalReached(env, bill);
+      await env.DB.prepare("UPDATE bills SET goal_notified = 1 WHERE id = ?").bind(bill.id).run();
+    }
 
-  hop = (await getHop(env, hopId))!;
-  if (hop.stamp_status === "pending") await paintHopStamp(env, hop, motif);
+    hop = (await getHop(env, hopId))!;
+    if (hop.stamp_status === "pending") await paintHopStamp(env, hop, motif);
   } finally {
     await env.DB.prepare("UPDATE hops SET fx_lease_until = 0 WHERE id = ?").bind(hopId).run();
   }
@@ -742,17 +745,21 @@ export async function writeCreatorFinale(env: Env, ctx: Ctx, bill: BillRow, word
   const check = checkFinale(words);
   if (!check.ok) throw new UserError(check.error!);
   if (!isClean(words)) throw new UserError(DIRTY_MESSAGE);
-  const res = await env.DB.prepare(
+  const res = await env.DB.batch([env.DB.prepare(
     `UPDATE bills SET status = 'complete', finale_text = ?, finale_by = 'creator', ended_at = ?, holder_pass_id = NULL, returned_pass_id = NULL, version = version + 1
      WHERE id = ? AND status IN ('holding', 'wild')`,
-  ).bind(words, now(), bill.id).run();
-  if (!res.meta.changes) throw new UserError("This story just changed. Refresh and try again.", 409);
+  ).bind(words, now(), bill.id),
+    env.DB.prepare("INSERT OR IGNORE INTO notification_jobs (id,bill_id,kind,details) SELECT ?,?,'end','{}' FROM bills WHERE id = ? AND status = 'complete'")
+      .bind(`end:${bill.id}:end`,bill.id,bill.id),
+  ]);
+  if (!res[0].meta.changes) throw new UserError("This story just changed. Refresh and try again.", 409);
   const ended = (await getBill(env, bill.id))!;
   await addDiary(env, ended, "finale", `The one who started me wrote the ending. ${ended.hop_count} hops. I'm retiring to a frame on someone's wall.`);
   await notifyFollowers(env, ended, "end", {});
 }
 
-export async function writeBillsOwnEnding(env: Env, bill: BillRow) {
+export async function writeBillsOwnEnding(env: Env, bill: BillRow, force = false) {
+  if (bill.status !== "holding" && bill.status !== "wild") return false;
   const pers = personalityOf(bill);
   const { results: places } = await env.DB.prepare(
     "SELECT city, region, country FROM hops WHERE bill_id = ? AND status = 'confirmed' AND city IS NOT NULL GROUP BY city ORDER BY MIN(idx)",
@@ -776,18 +783,22 @@ export async function writeBillsOwnEnding(env: Env, bill: BillRow) {
     storyWords: bill.word_count,
     wasWild: bill.status === "wild",
   });
-  const res = await env.DB.prepare(
+  const res = await env.DB.batch([env.DB.prepare(
     `UPDATE bills SET status = 'eulogized', eulogy = ?, finale_text = ?, finale_by = CASE WHEN ? IS NULL THEN NULL ELSE 'bill' END,
        ended_at = ?, holder_pass_id = NULL, returned_pass_id = NULL, version = version + 1
      WHERE id = ? AND status = ? AND version = ? AND holder_pass_id IS ?
        AND holder_since IS ? AND wild_since IS ?
-       AND ((status = 'holding' AND holder_since < ?) OR (status = 'wild' AND wild_since < ?))`,
+       AND (? = 1 OR (status = 'holding' AND holder_since < ?) OR (status = 'wild' AND wild_since < ?))`,
   ).bind(e.eulogy, e.closing, e.closing, now(), bill.id, bill.status, bill.version, bill.holder_pass_id,
-    bill.holder_since, bill.wild_since, now() - 14 * DAY, now() - 14 * DAY).run();
-  if (!res.meta.changes) return;
+    bill.holder_since, bill.wild_since, force ? 1 : 0, now() - 14 * DAY, now() - 14 * DAY),
+    env.DB.prepare("INSERT OR IGNORE INTO notification_jobs (id,bill_id,kind,details) SELECT ?,?,'end','{}' FROM bills WHERE id = ? AND status = 'eulogized'")
+      .bind(`end:${bill.id}:end`,bill.id,bill.id),
+  ]);
+  if (!res[0].meta.changes) return false;
   const ended = (await getBill(env, bill.id))!;
   await addDiary(env, ended, "death", e.eulogy, { meta: e.meta });
   await notifyFollowers(env, ended, "end", {});
+  return true;
 }
 
 // ====================================================================== stalls

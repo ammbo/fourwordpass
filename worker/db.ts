@@ -116,15 +116,6 @@ export const latestPendingPass = (env: Env, billId: string) =>
     .bind(billId)
     .first<PassRow>();
 
-export async function confirmedHops(env: Env, billId: string, limit = 5000): Promise<HopRow[]> {
-  const { results } = await env.DB.prepare(
-    "SELECT * FROM hops WHERE bill_id = ? AND status = 'confirmed' ORDER BY idx ASC LIMIT ?",
-  )
-    .bind(billId, limit)
-    .all<HopRow>();
-  return results;
-}
-
 /** The last ~n words of the story, for AI context and teasers. */
 export async function storyTail(env: Env, billId: string, words = 60): Promise<string> {
   const { results } = await env.DB.prepare(

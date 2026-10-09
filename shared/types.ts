@@ -60,6 +60,7 @@ export type BillSummary = {
 
 export type PublicBill = {
   paymentMode: PayPalMode;
+  placeCount: number;
   history: { olderBefore: number | null; newerAfter: number | null };
   serial: string;
   status: BillStatus;

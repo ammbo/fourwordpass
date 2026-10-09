@@ -36,7 +36,7 @@ The concept and the core loop are built as specified. These are the deliberate d
 - **One Cloudflare Worker** serves the React app and API, with D1, R2, Workers AI (stamp art plus a text fallback), Cloudflare Email Sending (no Resend), `request.cf` for city-level location (no geo-IP service), and a cron for nags, polling and backfills.
 - **Passport stamps** are crisp SVG (city, date, serial, hop number) with an AI ink illustration tinted into the middle. Image models garble text, so they never draw the lettering.
 - **Fast polling** right after each payout, plus the webhook, plus a cron fallback. In sandbox the "watch it land" moment takes seconds.
-- **PayPal hiccups aren't the recipient's fault.** A 5xx, rate limit, auth blip or network error when creating a payout keeps the pass in flight and retries it with the same pass id (the `sender_batch_id`, so PayPal can't pay twice). Only a 4xx rejection fails the pass. Anything PayPal hasn't settled after two hours fails, so a stuck payout can't freeze a bill.
+- **PayPal hiccups aren't the recipient's fault.** A 5xx, rate limit, auth blip or network error when creating a payout keeps the pass in flight and retries it with the same pass id (the `sender_batch_id`, so PayPal can't pay twice). Only a 4xx rejection fails the pass. Unresolved payouts stay reserved after two hours and keep reconciling, because a timeout does not cancel a payment. Later financial outcomes update the ledger without undoing a confirmed story hop.
 - **Send it back.** A holder who doesn't want the bill sends it back to whoever passed it to them (the creator, for a first hand-off), who picks someone else with no new words. A claimer puts it back in the wild. Holder emails and nags carry the link, so nobody named by a friend is stuck with three nags and a dead story.
 - **Each bill gets a unique spirograph rosette** on its banknote, generated from its serial.
 - **Open Books**, a public ledger of every dollar in and out (AG Grid + AG Charts). Being the sender of record on every payout is what makes it possible.
@@ -95,7 +95,7 @@ npm run db:migrate:local
 npm run dev                           # http://localhost:5173
 ```
 
-In mock mode payouts settle about 3s after creation. Recipients can trigger the unhappy paths: `+fail` (e.g. `x+fail@example.com`) fails, `+flaky` gets simulated PayPal outages for its first ~8s and is retried, and `+stuck` never settles (it fails after two hours). Emails land in the `emails` table, which you can view at `GET /api/admin/outbox` with `Authorization: Bearer dev-admin`.
+In mock mode payouts settle about 3s after creation. Recipients can trigger the unhappy paths: `+fail` (e.g. `x+fail@example.com`) fails, `+flaky` gets simulated PayPal outages for its first ~8s and is retried, and `+stuck` never settles (it remains pending for reconciliation). Emails land in the `emails` table, which you can view at `GET /api/admin/outbox` with `Authorization: Bearer dev-admin`.
 
 ```bash
 npm test          # four-word rule, AI closing budget, moderation
@@ -109,6 +109,16 @@ npm run deploy    # build → remote D1 migrations → wrangler deploy
 ```
 
 Production secrets (`TOKEN_SECRET`, `ADMIN_TOKEN`) are already set. A copy is in `.secrets.local`, which is gitignored. Email Sending is enabled for `fourwordpass.com`; mail comes from `buck@fourwordpass.com` with "Four Word Pass" as the sender name.
+
+## Reliability and payment modes
+
+The Oct 9 repair adds a D1 migration (`0004_reliability.sql`), atomic reservation and settlement, resumable paid mints tied to a private checkout key, leased hop effects, durable mail and follower jobs, verified subscriptions, recipient resend cooldowns, and 200-hop story pages. Deploy the migration with the Worker/frontend, then repeat a hosted checkout and handoff test. Local tests do not establish deployment or provider delivery.
+
+`PAYPAL_MODE=mock` is an explicit simulation; `sandbox` requires sandbox credentials. Missing/invalid configuration fails closed. Historical checkout modes are stored separately, so changing the current mode does not relabel old records. Drain pending and unclaimed payouts before changing environments; each environment needs its own credentials and webhook verification.
+
+`PAYPAL_MODE=live` is recognized but new checkout/capture and payouts are paused. The proposed production model holds the dollar through internal story handoffs and pays it out once at completion. The final recipient, wild/expired-story handling, fees and launch disclosures must be defined before implementing and enabling it. The sandbox's repeated platform-funded test payouts remain intentional.
+
+Mail is delivered at least once with leases, backoff and stable deduplication keys. A provider acceptance followed by an interrupted database acknowledgement can still produce a duplicate email. Delivered private message bodies are cleared after seven days; delivery identifiers remain for deduplication.
 
 ## PayPal sandbox
 

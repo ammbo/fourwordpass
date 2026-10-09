@@ -2,6 +2,8 @@
 
 Reviewed October 9, 2026, against checkout `ab2d4c7` and the public site. Application source was left unchanged. The known difficulty completing PayPal sandbox checkout is excluded from the findings below.
 
+**Implementation follow-up:** [repairs and current verification](repairs.md) records the subsequent local fixes, corrected severity assessment, and deployment boundary. The findings and reproduction artifacts below are historical evidence of the pre-repair behavior.
+
 Five high-priority defects deserve attention before a broader beta: paid mints can report failure and lose the creator key; interrupted settlement can freeze a bill; competing wild releases can publish multiple contributions; failed notifications are never retried; and local payout timeouts are treated as definitive payment failures. A separate real-money blocker remains in the funding model.
 
 ## High-priority findings

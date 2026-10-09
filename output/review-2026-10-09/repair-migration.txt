@@ -1,0 +1,1 @@
+PASS: 0004 applies to the previous schema. Pending, interrupted delivered, and failed-hop reservations are identified; old holders and declined claims are excluded. Five synthetic legacy cases checked.

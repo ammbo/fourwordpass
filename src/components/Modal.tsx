@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const dialog = useRef<HTMLDivElement>(null);
+  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousFocus = opener.current;
     const focusable = () => Array.from(dialog.current?.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex="0"]') ?? []).filter(el => el.getClientRects().length > 0);
     if (!dialog.current?.contains(document.activeElement)) (focusable()[0] ?? dialog.current)?.focus();
     const onKey = (e: KeyboardEvent) => {

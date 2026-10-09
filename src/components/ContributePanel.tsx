@@ -48,7 +48,7 @@ export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
           holdingTurn.current = v.holderSince;
           setLanded(false); setSentTo(null); setDeclined(null);
         }
-        if ((v.state === "moved_on" || v.state === "invalid") && bill.status === "wild") onObsolete();
+        if ((v.state === "moved_on" || v.state === "invalid") && (bill.status === "wild" || !sentTo)) onObsolete();
         if ((prevState.current === "in_transit" || sentTo === "someone") && v.state === "moved_on") setLanded(true);
         if (v.state === "in_transit") transitWords.current = v.words;
         prevState.current = v.state;

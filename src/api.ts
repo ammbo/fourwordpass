@@ -73,12 +73,18 @@ export function useLiveBill(serial: string) {
   const [error, setError] = useState<string | null>(null);
   const version = useRef(-2);
   const generation = useRef(0);
-  const [cursor, setCursor] = useState<{before?: number; after?: number}>(() => {
+  const readCursor = () => {
     const params = new URLSearchParams(location.search);
     const key = params.has("before") ? "before" : params.has("after") ? "after" : null;
     const value = key ? Number(params.get(key)) : NaN;
     return key && Number.isSafeInteger(value) && value >= 0 ? {[key]: value} : {};
-  });
+  };
+  const [cursor, setCursor] = useState<{before?: number; after?: number}>(readCursor);
+  useEffect(() => {
+    const pop = () => setCursor(readCursor());
+    window.addEventListener("popstate",pop);
+    return () => window.removeEventListener("popstate",pop);
+  }, []);
   const [loadingPage, setLoadingPage] = useState(false);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
 
@@ -119,7 +125,7 @@ export function useLiveBill(serial: string) {
     const url = new URL(location.href);
     url.searchParams.delete("before"); url.searchParams.delete("after");
     Object.entries(next).forEach(([k,v]) => url.searchParams.set(k,String(v)));
-    history.replaceState(history.state,"",url.pathname + url.search + url.hash);
+    history.pushState(history.state,"",url.pathname + url.search + url.hash);
     setCursor(next);
   };
   return { bill, error, errorStatus, refresh, changePage, loadingPage };

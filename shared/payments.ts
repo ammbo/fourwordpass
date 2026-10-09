@@ -1,4 +1,4 @@
-import type { PayPalMode } from "./types";
+import type { PayPalMode } from "./types.ts";
 
 // Live collection stays closed until the held-dollar settlement rule is implemented.
 export const LIVE_PAYMENT_NOTICE = "Live payments are paused while the final payout model is being completed.";

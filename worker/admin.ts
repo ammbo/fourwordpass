@@ -91,7 +91,8 @@ admin.post("/end", async (c) => {
   const { serial } = await c.req.json<{ serial: string }>();
   const bill = await getBillBySerial(c.env, serial);
   if (!bill) return c.json({ error: "No such bill" }, 404);
-  await engine.writeBillsOwnEnding(c.env, bill);
+  const ended = await engine.writeBillsOwnEnding(c.env, bill, true);
+  if (!ended) return c.json({ error: "This bill changed or cannot end while a handoff is in flight." }, 409);
   return c.json({ ok: true });
 });
 
