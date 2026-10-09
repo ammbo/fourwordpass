@@ -23,6 +23,8 @@ export type PublicHop = {
   words: string;
   contentWords: number;
   penName: string | null;
+  /** Signed with a pen name its writer claimed on their account. */
+  penVerified: boolean;
   place: string;       // "Austin, TX" or "Somewhere"
   lat: number | null;
   lng: number | null;
@@ -87,12 +89,21 @@ export type PublicBill = {
   diary: PublicDiary[];
 };
 
+/**
+ * Private to the person a buck was passed to, and it outlives their turn: it lets them follow the
+ * story or get a sign-in code at the address it was sent to, without the page ever seeing that address.
+ */
+export type HolderTicket = { token: string; email: string /* masked */ };
+
+/** Who's holding, as far as accounts go: set only when the signed-in account is the one it was passed to. */
+type HolderIdentity = { ticket: HolderTicket; account: { handle: string | null } | null };
+
 export type HolderView =
   | { state: "invalid" }
   | { state: "moved_on" }
   | { state: "ended" }
-  | { state: "arriving"; paypalStatus: string | null; mode: string }
-  | {
+  | ({ state: "arriving"; paypalStatus: string | null; mode: string } & HolderIdentity)
+  | ({
       state: "holding";
       followerCount: number;
       suggestionsLeft: number;
@@ -104,14 +115,14 @@ export type HolderView =
       returnedBy: string | null;   // masked
       /** Where it goes if you send it back: whoever passed it to you, or the wild if you claimed it. */
       sendBackTo: "sender" | "wild";
-    }
-  | {
+    } & HolderIdentity)
+  | ({
       state: "in_transit";
       recipient: string;   // masked
       paypalStatus: string | null;
       mode: string;
       words: string;
-    };
+    } & HolderIdentity);
 
 /** The latest payout that didn't reach the person you picked. */
 export type PassFailure = { recipient: string; error: string; words: string; timedOut: boolean };
@@ -140,7 +151,7 @@ export type BooksRow = {
   at: number;
   direction: "in" | "out";
   amount: number;        // dollars
-  kind: "release" | "fork" | "first_holder" | "claim" | "pass";
+  kind: "release" | "fork" | "comp" | "first_holder" | "claim" | "pass";   // comp: an admin release with no checkout ($0 in)
   serial: string;
   hop: number | null;    // the hop whose words rode on this payout
   paypalStatus: string;  // COMPLETED | UNCLAIMED | SUCCESS | PENDING | FAILED | ...
@@ -165,4 +176,32 @@ export type HomeData = {
   featured: BillSummary[];
   recent: BillSummary[];
   wild: BillSummary[];
+};
+
+/** The signed-in account. The email is the account's own, shown only to its owner. */
+export type Me = { email: string; handle: string | null; isAdmin: boolean; createdAt: number };
+
+export type DashboardHop = {
+  serial: string;
+  personaName: string;
+  idx: number;
+  words: string;
+  place: string;
+  penName: string | null;
+  penVerified: boolean;
+  stampUrl: string | null;
+  stampStatus: PublicHop["stampStatus"];
+  confirmedAt: number;
+  opening: boolean;    // the foreword of a bill you started
+};
+
+/** Everything a person has done, found by their participant id, including what they did before signing up. */
+export type Dashboard = {
+  me: Me;
+  stats: { hops: number; words: number; held: number; started: number; places: number };
+  /** Bucks waiting on you: four words to write, a returned buck to pass again, or a dollar on its way. */
+  inHand: (BillSummary & { action: "write" | "repass" | "arriving" })[];
+  started: BillSummary[];
+  hops: DashboardHop[];
+  following: { id: string; serial: string; personaName: string; status: BillStatus; preference: FollowPreference }[];
 };

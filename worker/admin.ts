@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { SERIAL_PREFIX } from "../shared/brand";
+import { upsertUser } from "./accounts";
 import * as ai from "./ai";
 import { runCron } from "./cron";
 import { type BillRow, type HopRow, getBillBySerial, personalityOf, touch } from "./db";
@@ -71,6 +72,21 @@ admin.post("/remove-hop", async (c) => {
     ).bind(bill.id),
   ]);
   return c.json({ ok: true });
+});
+
+/** Accounts. Making someone an admin lets them release bucks without checkout while signed in. */
+admin.get("/users", async (c) => {
+  const { results } = await c.env.DB.prepare("SELECT email, handle, is_admin, created_at, last_seen_at FROM users ORDER BY created_at DESC LIMIT 200").all();
+  return c.json(results);
+});
+
+/** Creates the account if it doesn't exist yet; the person still proves the address when they sign in. */
+admin.post("/users", async (c) => {
+  const { email, admin: isAdmin } = await c.req.json<{ email: string; admin?: boolean }>();
+  const user = await upsertUser(c.env, email);
+  if (isAdmin !== undefined) await c.env.DB.prepare("UPDATE users SET is_admin = ? WHERE id = ?").bind(isAdmin ? 1 : 0, user.id).run();
+  const row = await c.env.DB.prepare("SELECT email, handle, is_admin, created_at FROM users WHERE id = ?").bind(user.id).first();
+  return c.json(row);
 });
 
 admin.get("/outbox", async (c) => {

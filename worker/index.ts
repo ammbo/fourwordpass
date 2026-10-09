@@ -3,6 +3,8 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { AppConfig, HomeData } from "../shared/types";
 import { checkFourWords, normalizeWords } from "../shared/words";
+import { accounts, currentUser, startSignIn } from "./accounts";
+import { penNameFor } from "./challenges";
 import { admin } from "./admin";
 import { openBooks } from "./books";
 import { receiveEmail } from "./inbox";
@@ -11,36 +13,25 @@ import { runCron } from "./cron";
 import { type PassRow, getBillBySerial, getPass, storyTail } from "./db";
 import * as engine from "./engine";
 import { UserError } from "./engine";
+import { ctxOf, ip, limit, readBody } from "./http";
 import { createOrder, PayPalError, paypalMode, parsePayoutEvent, verifyWebhook } from "./paypal";
-import { checkCap, newId, now, placeFromRequest, placeLabel, recoveryHash } from "./util";
-import { SUGGESTIONS_PER_HOLDER, creatorView, holderView, publicBill, summaries } from "./views";
+import { checkCap, newId, now, placeFromRequest, placeLabel, randomToken, recoveryHash } from "./util";
+import { SUGGESTIONS_PER_HOLDER, creatorView, holderView, passFromTicket, publicBill, summaries } from "./views";
 import { servePage, serveSitemap } from "./seo";
 import { parseStoryCursor } from "./history";
 
 const app = new Hono<{ Bindings: Env }>();
 
-const ctxOf = (c: { executionCtx: { waitUntil(p: Promise<unknown>): void } }) => ({ waitUntil: (p: Promise<unknown>) => c.executionCtx.waitUntil(p) });
-const ip = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
-
-async function limit(binding: RateLimit, key: string) {
-  const { success } = await binding.limit({ key });
-  if (!success) throw new UserError("Slow down a little. The buck isn't going anywhere.", 429);
-}
-
 const token = z.string().min(1).max(256);
 const emailSchema = z.string().trim().min(3).max(254);
+// Signed in, the creator email comes from the account. `free` is honored only for a signed-in admin.
 const mintSchema = z.object({
-  orderId: z.string().min(1).max(128), recoveryKey: z.string().min(32).max(128), creatorEmail: emailSchema,
+  orderId: z.string().min(1).max(128).optional(), recoveryKey: z.string().min(32).max(128).optional(), free: z.boolean().optional(),
+  creatorEmail: emailSchema.optional(),
   words: z.string().max(90), theme: z.string().max(140).nullish(), goal: z.number().int().min(2).max(100_000).nullish(),
   firstRecipient: emailSchema.nullish(), penName: z.string().max(24).nullish(), showCity: z.boolean().optional(),
+  createAccount: z.boolean().optional(),
 });
-async function readBody<T extends z.ZodType>(c: {req: {json(): Promise<unknown>}}, schema: T): Promise<z.infer<T>> {
-  let value: unknown;
-  try { value = await c.req.json(); } catch { throw new UserError("Send a valid JSON request."); }
-  const result = schema.safeParse(value);
-  if (!result.success) throw new UserError(`Invalid ${result.error.issues[0]?.path.join(".") || "request"}: ${result.error.issues[0]?.message}`);
-  return result.data;
-}
 app.use("/api/*", bodyLimit({maxSize: 32_768, onError: c => c.json({error: "That request is too large."},413)}));
 
 // "Four" is a homonym. Every spelling someone might hear lands on the real site.
@@ -129,7 +120,7 @@ app.get("/api/bills/:serial/v", async (c) => {
 app.get("/api/bills/:serial/holder", async (c) => {
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) return c.json({ state: "invalid" });
-  return c.json(await holderView(c.env, c.req.raw, bill, c.req.query("t") ?? ""));
+  return c.json(await holderView(c.env, c.req.raw, bill, c.req.query("t") ?? "", await currentUser(c)));
 });
 
 app.get("/api/bills/:serial/creator", async (c) => {
@@ -165,23 +156,35 @@ async function checkedWords(env: Env, words: string) {
   }
 }
 
+/** A paid release carries its checkout. A signed-in admin can release without one: the platform funds it. */
+async function mintInput(c: Parameters<typeof currentUser>[0], body: z.infer<typeof mintSchema>, fork?: engine.MintInput["fork"]): Promise<engine.MintInput> {
+  const { free, orderId, recoveryKey, createAccount, ...rest } = body;
+  const user = await currentUser(c);
+  // Signed in, there's already an account; otherwise the creator-key email can offer one.
+  const draft = { ...rest, ...(createAccount && !user ? { createAccount: true } : {}) };
+  const creatorEmail = draft.creatorEmail ?? user?.email;
+  if (!creatorEmail) throw new UserError("We need your email for your creator key.");
+  if (free) {
+    if (!user?.is_admin) throw new UserError("Only an admin can release a buck without checkout.", 403);
+    return { ...draft, creatorEmail, orderId: `COMP-${newId()}`, recoveryKey: randomToken(), fork, compedBy: user.id };
+  }
+  if (!orderId || !recoveryKey) throw new UserError("Finish checkout first.", 402);
+  return { orderId, recoveryKey, ...draft, creatorEmail, fork };
+}
+
 app.post("/api/bills", async (c) => {
   await limit(c.env.RL_WRITE, `mint:${ip(c.req.raw)}`);
   const body = await readBody(c, mintSchema);
   await checkedWords(c.env, body.words);
-  const out = await engine.mintBill(c.env, ctxOf(c), placeFromRequest(c.req.raw), { ...body, fork: undefined });
-  return c.json(out);
+  return c.json(await engine.mintBill(c.env, ctxOf(c), placeFromRequest(c.req.raw), await mintInput(c, body)));
 });
 
 app.post("/api/bills/:serial/fork", async (c) => {
   await limit(c.env.RL_WRITE, `mint:${ip(c.req.raw)}`);
-  const body = await readBody(c, mintSchema.extend({atHop: z.number().int().min(1)}));
+  const { atHop, ...body } = await readBody(c, mintSchema.extend({atHop: z.number().int().min(1)}));
   await checkedWords(c.env, body.words);
-  const out = await engine.mintBill(c.env, ctxOf(c), placeFromRequest(c.req.raw), {
-    ...body,
-    fork: { parentSerial: c.req.param("serial").toUpperCase(), atHop: Number(body.atHop) },
-  });
-  return c.json(out);
+  const fork = { parentSerial: c.req.param("serial").toUpperCase(), atHop: Number(atHop) };
+  return c.json(await engine.mintBill(c.env, ctxOf(c), placeFromRequest(c.req.raw), await mintInput(c, body, fork)));
 });
 
 app.post("/api/bills/:serial/contribute", async (c) => {
@@ -219,10 +222,17 @@ app.post("/api/bills/:serial/repass", async (c) => {
 
 app.post("/api/bills/:serial/claim", async (c) => {
   await limit(c.env.RL_WRITE, `claim:${ip(c.req.raw)}`);
-  const { email } = await readBody(c, z.object({email: emailSchema}));
+  const { email, penName } = await readBody(c, z.object({email: emailSchema.optional(), penName: z.string().max(64).optional()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
-  return c.json(await engine.claimFromWild(c.env, ctxOf(c), bill, email));
+  const user = await currentUser(c);
+  const claimer = email ?? user?.email ?? "";
+  // A pen name asks for an account. It's checked before claiming; the account waits for the emailed code or link.
+  const pen = !user && penName?.trim() ? await penNameFor(c.env, penName, engine.validateEmail(claimer, "Your email")) : null;
+  if (pen && "error" in pen) throw new UserError(pen.error, 409);
+  const claimed = await engine.claimFromWild(c.env, ctxOf(c), bill, claimer);
+  const account = pen ? await startSignIn(c.env, claimer, `/b/${bill.serial}`, pen.name, false).catch(() => null) : null;
+  return c.json({ ...claimed, account: account && pen ? { ...account, penName: pen.name } : null });
 });
 
 app.post("/api/bills/:serial/suggest", async (c) => {
@@ -257,13 +267,30 @@ app.post("/api/bills/:serial/finale", async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * A typed email gets a confirmation link. A proven address follows at once: the signed-in
+ * account's, or the one a holder's ticket says this buck was passed to.
+ */
 app.post("/api/bills/:serial/follow", async (c) => {
   await limit(c.env.RL_WRITE, `follow:${ip(c.req.raw)}`);
-  const body = await readBody(c, z.object({email: emailSchema, preference: z.enum(["every_hop","on_end"])}));
+  const body = await readBody(c, z.object({email: emailSchema.optional(), ticket: z.string().max(200).optional(), preference: z.enum(["every_hop","on_end"]), penName: z.string().max(64).optional()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
-  await engine.follow(c.env, bill, body.email, body.preference === "every_hop" ? "every_hop" : "on_end");
-  return c.json({ ok: true });
+  const user = await currentUser(c);
+  const typed = body.email?.toLowerCase();
+  if (typed && typed !== user?.email) {
+    // A pen name asks for an account too: the confirmation email offers it, and one tap does both.
+    const pen = !user && body.penName?.trim() ? await penNameFor(c.env, body.penName, typed) : null;
+    if (pen && "error" in pen) throw new UserError(pen.error, 409);
+    const { offered } = await engine.follow(c.env, bill, typed, body.preference, pen?.name ?? null);
+    // No confirmation went out (already sent recently, or opted out), so the offer travels on its own.
+    const account = pen && !offered ? !!(await startSignIn(c.env, typed, `/b/${bill.serial}`, pen.name, false).catch(() => null)) : offered;
+    return c.json({ ok: true, verified: false, account });
+  }
+  const proven = typed ?? (body.ticket ? (await passFromTicket(c.env, bill, body.ticket))?.recipient_email : user?.email);
+  if (!proven) throw new UserError(body.ticket ? "That link has expired. Enter your email instead." : "Enter your email to follow.", 403);
+  await engine.followVerified(c.env, bill, proven, body.preference);
+  return c.json({ ok: true, verified: true });
 });
 
 /** "I only got PayPal's email." Re-sends the holder link to whoever holds it. Reveals nothing. */
@@ -281,18 +308,26 @@ app.get("/api/follows/:id", async (c) => {
   return c.json(row ?? { preference: null, serial: null });
 });
 
+async function setFollow(env: Env, id: string, preference: "every_hop" | "on_end" | "unfollow") {
+  const row = await env.DB.prepare("SELECT bill_id FROM follows WHERE id = ?").bind(id).first<{ bill_id: string }>();
+  if (row) await engine.setFollowPreference(env, id, row.bill_id, preference);
+}
+
 app.post("/api/follows/:id", async (c) => {
   const id = c.req.param("id");
   const body = await readBody(c, z.object({t: token, preference: z.enum(["every_hop","on_end","unfollow"])}));
   if (!(await checkCap(c.env, "follow", id, body.t))) throw new UserError("That link has expired.", 403);
-  const row = await c.env.DB.prepare("SELECT bill_id FROM follows WHERE id = ?").bind(id).first<{ bill_id: string }>();
-  if (!row) return c.json({ ok: true });
-  await c.env.DB.batch([
-    body.preference === "unfollow"
-      ? c.env.DB.prepare("UPDATE follows SET verified = 0, opted_out = 1 WHERE id = ?").bind(id)
-      : c.env.DB.prepare("UPDATE follows SET preference = ?, verified = 1, opted_out = 0 WHERE id = ?").bind(body.preference === "every_hop" ? "every_hop" : "on_end", id),
-    c.env.DB.prepare("UPDATE bills SET follower_count = (SELECT COUNT(*) FROM follows WHERE bill_id = ?1 AND verified = 1), version = version + 1 WHERE id = ?1").bind(row.bill_id),
-  ]);
+  await setFollow(c.env, id, body.preference);
+  return c.json({ ok: true });
+});
+
+// RFC 8058 one-click unsubscribe. Mail clients POST here; a GET (link scanners, older clients) only opens the settings page.
+app.get("/api/follows/:id/unsubscribe", (c) =>
+  c.redirect(`/f/${encodeURIComponent(c.req.param("id"))}?t=${encodeURIComponent(c.req.query("t") ?? "")}`));
+app.post("/api/follows/:id/unsubscribe", async (c) => {
+  const id = c.req.param("id");
+  if (!(await checkCap(c.env, "follow", id, c.req.query("t")))) throw new UserError("That link has expired.", 403);
+  await setFollow(c.env, id, "unfollow");
   return c.json({ ok: true });
 });
 
@@ -314,6 +349,7 @@ app.post("/api/webhooks/paypal", async (c) => {
   return c.json({ ok: true });
 });
 
+app.route("/api", accounts);
 app.route("/api/admin", admin);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));

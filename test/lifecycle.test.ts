@@ -94,6 +94,29 @@ describe('Lifecycle regressions (real SQL, stubbed external services)',()=>{
     const paid=db.sqlite.prepare("SELECT count(*) n FROM passes WHERE kind='claim' AND status='delivered'").get();
     expect(paid?.n).toBe(3);expect((await getBill(env,'b'))!.word_count).toBe(0);
   });
+  it('caps how many bucks one inbox can receive in a day',async()=>{
+    await bill('wild');
+    for(let n=0;n<5;n++){
+      await engine.claimFromWild(env,ctx,(await getBill(env,'b'))!,'target@example.com');
+      const pass=await env.DB.prepare("SELECT * FROM passes WHERE status='pending'").first();
+      await engine.applyPayoutState(env,ctx,pass,{...settled,itemId:'cap'+n});
+      await engine.declineBill(env,ctx,(await getBill(env,'b'))!);
+    }
+    await expect(engine.claimFromWild(env,ctx,(await getBill(env,'b'))!,'target@example.com')).rejects.toThrow('plenty');
+    await engine.claimFromWild(env,ctx,(await getBill(env,'b'))!,'someone-else@example.com');
+  });
+  it('caps follow confirmations per inbox across bucks, and spaces out hop emails',async()=>{
+    await bill('wild');
+    for(const n of [2,3,4]) db.sqlite.prepare("INSERT INTO bills(id,seq,serial,status,created_at,wild_since) VALUES(?,?,?,'wild',?,?)").run('b'+n,n,'FWP-000'+n,Date.now(),Date.now());
+    for(const id of ['b','b2','b3','b4']) await engine.follow(env,(await getBill(env,id))!,'target@example.com','on_end');
+    expect(vi.mocked(queueMail).mock.calls.filter(([,m])=>m.kind==='follow_confirm')).toHaveLength(3);
+
+    db.sqlite.prepare("UPDATE follows SET verified=1, preference='every_hop' WHERE bill_id='b'").run();
+    const hop=(id:string,idx:number)=>JSON.stringify({hop:{id,idx,words:'red blue green orange',city:'Austin',writer_email:'writer@example.com'}});
+    db.sqlite.prepare("INSERT INTO notification_jobs(id,bill_id,kind,details) VALUES('hop:b:h1','b','hop',?),('hop:b:h2','b','hop',?)").run(hop('h1',1),hop('h2',2));
+    await engine.runNotificationJobs(env);
+    expect(vi.mocked(queueMail).mock.calls.filter(([,m])=>m.kind==='follower_hop')).toHaveLength(1);
+  });
   it('discards an obsolete eulogy after a fresh handoff',async()=>{
     const old=(await bill('wild'))!;
     vi.mocked(ai.writeEulogy).mockImplementationOnce(async()=>{
@@ -237,6 +260,22 @@ describe('Lifecycle regressions (real SQL, stubbed external services)',()=>{
     const calls=vi.mocked(queueMail).mock.calls.length;
     await engine.follow(env,b,'reader@example.com','on_end');
     expect(queueMail).toHaveBeenCalledTimes(calls);
+    expect(db.sqlite.prepare("SELECT verified,opted_out FROM follows WHERE id=?").get(f.id)).toMatchObject({verified:0,opted_out:1});
+  });
+  it('honors one-click unsubscribe POSTs and only redirects GETs',async()=>{
+    const b=(await bill('wild'))!;
+    await engine.follow(env,b,'oneclick@example.com','every_hop');
+    const f=db.sqlite.prepare("SELECT * FROM follows WHERE email='oneclick@example.com'").get()!;
+    db.sqlite.prepare("UPDATE follows SET verified=1 WHERE id=?").run(f.id);
+    const {default: worker}=await import('../worker/index');
+    const url=`http://localhost/api/follows/${f.id}/unsubscribe?t=${await capToken(env,'follow',String(f.id))}`;
+    const get=await worker.fetch(new Request(url),env,ctx);
+    expect(get.status).toBe(302);
+    expect(get.headers.get('Location')).toContain(`/f/${f.id}?t=`);
+    expect(db.sqlite.prepare("SELECT verified FROM follows WHERE id=?").get(f.id)?.verified).toBe(1);
+    expect((await worker.fetch(new Request(`http://localhost/api/follows/${f.id}/unsubscribe?t=wrong`,{method:'POST'}),env,ctx)).status).toBe(403);
+    const post=await worker.fetch(new Request(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'List-Unsubscribe=One-Click'}),env,ctx);
+    expect(post.status).toBe(200);
     expect(db.sqlite.prepare("SELECT verified,opted_out FROM follows WHERE id=?").get(f.id)).toMatchObject({verified:0,opted_out:1});
   });
   it('queues follower updates across multiple pages without the old 500-person cutoff',async()=>{

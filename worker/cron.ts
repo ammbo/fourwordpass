@@ -1,5 +1,6 @@
 // Runs every minute. Each job is small, bounded, and idempotent.
 
+import { backfillParticipants } from "./accounts";
 import type { BillRow, PassRow } from "./db";
 import * as engine from "./engine";
 import { retryMail } from "./email";
@@ -86,6 +87,14 @@ export async function runCron(env: Env, ctx: Ctx) {
 
   // Keep the test inbox small.
   await safely("inbox-trim", () => env.DB.prepare("DELETE FROM inbox WHERE received_at < ?").bind(t - 30 * DAY).run());
+
+  // Accounts: participant ids for rows from before accounts, and spent sign-ins.
+  await safely("participants", () => backfillParticipants(env));
+  await safely("auth-trim", () => env.DB.batch([
+    env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(t),
+    // A day past expiry: offers last a week, and the daily wrong-code cap looks back a day.
+    env.DB.prepare("DELETE FROM auth_challenges WHERE expires_at < ?").bind(t - DAY),
+  ]));
 
   // 5. Fourteen days without moving: the bill writes its eulogy and closes the story.
   await safely("deaths", async () => {

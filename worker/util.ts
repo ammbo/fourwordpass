@@ -29,25 +29,41 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   return key;
 }
 
+type Purpose = "holder" | "creator" | "follow" | "ticket" | "participant" | "signin";
+
 /**
  * Capability tokens are HMACs of a purpose + record id. Nothing is stored, and
  * rotation is free: a holder token is derived from the pass that delivered the
  * bill, so the next delivered pass invalidates it.
  */
-export async function capToken(env: Env, purpose: "holder" | "creator" | "follow", id: string): Promise<string> {
+export async function capToken(env: Env, purpose: Purpose, id: string): Promise<string> {
   const secret = env.TOKEN_SECRET;
   if (!secret) throw new Error("TOKEN_SECRET is not set");
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(`${purpose}:${id}`));
   return b64url(sig).slice(0, 32);
 }
 
-export async function checkCap(env: Env, purpose: "holder" | "creator" | "follow", id: string | null | undefined, token: string | null | undefined): Promise<boolean> {
+export async function checkCap(env: Env, purpose: Purpose, id: string | null | undefined, token: string | null | undefined): Promise<boolean> {
   if (!id || !token) return false;
-  const expected = await capToken(env, purpose, id);
-  if (expected.length !== token.length) return false;
+  return sameString(await capToken(env, purpose, id), token);
+}
+
+export function sameString(expected: string, actual: string): boolean {
+  if (expected.length !== actual.length) return false;
   let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ token.charCodeAt(i);
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
   return diff === 0;
+}
+
+/**
+ * Who someone is, without saying who: a keyed hash of their email. Every role a person
+ * plays (creator, recipient, writer, follower) records it, so signing up later finds the
+ * whole history. It depends on TOKEN_SECRET; rotating that secret orphans existing history.
+ */
+export const participantId = (env: Env, email: string) => capToken(env, "participant", email.trim().toLowerCase());
+
+export function randomToken(bytes = 32): string {
+  return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
 export function appUrl(env: Env, path: string): string {
@@ -92,7 +108,9 @@ export function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export async function recoveryHash(key: string) {
+export async function sha256Hex(key: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,"0")).join("");
 }
+
+export const recoveryHash = sha256Hex;

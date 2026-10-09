@@ -23,11 +23,16 @@ function opaque(id: string): string {
 const PASS_KIND: Record<string, BooksRow["kind"]> = { mint: "first_holder", fork: "first_holder", claim: "claim", pass: "pass" };
 
 export async function openBooks(env: Env): Promise<OpenBooks> {
-  const [checkouts, passes, totals, words, finales, voice, stamps] = await Promise.all([
+  const [checkouts, comps, passes, totals, words, finales, voice, stamps] = await Promise.all([
     env.DB.prepare(
       `SELECT id, serial, checkout_order_id, checkout_mode, forked_from_bill_id, created_at FROM bills
        WHERE checkout_order_id IS NOT NULL ORDER BY created_at DESC LIMIT ?`,
     ).bind(LEDGER_LIMIT).all<{ id: string; serial: string; checkout_order_id: string; checkout_mode: BooksRow["mode"]; forked_from_bill_id: string | null; created_at: number }>(),
+    // An admin release has no checkout, so the platform funds its first payout. Listed as $0 in, so that payout isn't a mystery.
+    env.DB.prepare(
+      `SELECT b.id, b.serial, b.created_at, a.paypal_mode FROM bills b LEFT JOIN mint_attempts a ON a.bill_id = b.id
+       WHERE b.comped_by IS NOT NULL ORDER BY b.created_at DESC LIMIT ?`,
+    ).bind(LEDGER_LIMIT).all<{ id: string; serial: string; created_at: number; paypal_mode: BooksRow["mode"] | null }>(),
     env.DB.prepare(
       `SELECT p.id, p.kind, p.status, p.paypal_mode, p.paypal_status, p.payout_item_id, p.payout_batch_id, p.created_at, p.settled_at,
               b.serial, h.idx AS hop_idx, h.status AS hop_status,
@@ -78,6 +83,22 @@ export async function openBooks(env: Env): Promise<OpenBooks> {
       settledBy: null,
       webhook: false,
       mode: b.checkout_mode,
+    })),
+    ...comps.results.map((b): BooksRow => ({
+      id: opaque(`comp:${b.id}`),
+      at: b.created_at,
+      direction: "in",
+      amount: 0,
+      kind: "comp",
+      serial: b.serial,
+      hop: null,
+      paypalStatus: "COMPED",
+      outcome: "landed",
+      ref: "No checkout",
+      secondsToLand: null,
+      settledBy: null,
+      webhook: false,
+      mode: b.paypal_mode ?? "sandbox",
     })),
     ...passes.results.map((p): BooksRow => ({
       id: opaque(p.id),

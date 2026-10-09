@@ -1,7 +1,7 @@
 import { paymentNotice } from "../shared/payments";
 import { readHopPage, parseStoryCursor } from "./history";
 import type { PayPalMode } from "../shared/types";
-import { faqForMode, PAGES, SITE_NAME, SITE_URL, billMeta, escapeHtml, pageMeta, renderHead, type PageMeta } from "../shared/site";
+import { faqForMode, PAGES, PRIVATE_PAGES, SITE_NAME, SITE_URL, billMeta, escapeHtml, pageMeta, renderHead, type PageMeta } from "../shared/site";
 import { getBillBySerial, personalityOf } from "./db";
 import { INFO_LINKS, INFO_PAGES, infoHtml } from "../shared/info";
 
@@ -27,7 +27,7 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
     status: 301, headers: { Location: `${trimmed}${url.search}`, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
   });
   let meta = pageMeta(path);
-  let status = PAGES[path] || /^\/f\/[^/]+$/.test(path) ? 200 : 404;
+  let status = PAGES[path] || PRIVATE_PAGES[path] || /^\/f\/[^/]+$/.test(path) ? 200 : 404;
   let content = `<p>${escapeHtml(meta.description)}</p><a href="/wild">Browse the wild</a>`;
   const match = path.match(/^\/b\/([^/]+)$/);
   if (match) {

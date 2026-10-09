@@ -26,7 +26,7 @@ The concept and the core loop are built as specified. These are the deliberate d
 5. The PRD's own example ("and then the lights dimmed" = 2 content words) needs `then` in the stopword list, so it's there.
 
 **Simplified (cut for MVP; none of it appears in the demo):**
-- **No accounts, magic links, profiles or handles.** Everything uses secret links: an HMAC holder link that rotates with every delivered payout, a creator link (your key to write the finale), and a follow link for managing or unsubscribing. Each hop can carry an optional pen name.
+- **Accounts are optional, and nothing requires one.** Everything still works from secret links: an HMAC holder link that rotates with every delivered payout, a creator link (your key to write the finale), and a follow link for managing or unsubscribing. Each hop can carry an optional pen name. See [Accounts](#accounts) for what signing in adds.
 - **Cut:** courier score and leaderboard, next-holder matchmaking, photo notes, storybook page, chapter summaries.
 - **The "AI writes the finale if the creator never responds" timer is gone.** One rule now: after 14 days without moving, the bill writes its eulogy and a labeled closing (≤5% of the story's words, max 12). Creators can end the story whenever they like.
 - **Mint and fork failures don't strand the bill.** If the first payout fails, the creator's opening words land and the bill goes wild.
@@ -67,7 +67,8 @@ worker/
   views.ts       public projections (emails, payout ids, ai_assisted never leave here)
   books.ts       Open Books: every checkout and payout, masked for the public ledger
   cron.ts        every minute: poll payouts, backfill side effects, wild returns, nag ladder, deaths
-  admin.ts       seed demo bills, fast-forward time, feature, remove a hop
+  admin.ts       seed demo bills, fast-forward time, feature, remove a hop, mark admins
+  accounts.ts    optional accounts: emailed sign-in codes, sessions, pen names, dashboard, participant ids
 shared/words.ts  the four-word rule (used by the browser counter AND the server)
 src/             React app: Home, Release, Wild, Bill page (story/map/diary/passport/fork tree), Open Books
 migrations/      D1 schema
@@ -76,6 +77,17 @@ migrations/      D1 schema
 **Model:** a **pass** is $1 moving from the platform to a person, and a **hop** is four words. Every state change is a conditional `UPDATE`, so duplicate webhooks, racing polls and double clicks are no-ops. Hop index is assigned at confirmation. The only text that reaches a story outside a holder's hop goes through `writeCreatorFinale` (human) and `writeBillsOwnEnding` (AI, always labeled).
 
 **AI:** Production runs on Workers AI: Llama 3.3 where someone is waiting (suggestions, personality at mint) and gpt-oss-120b for background writing (diary, nags, eulogy). With `ANTHROPIC_API_KEY` set, Claude (`claude-opus-5-5`, low effort, server-side refusal fallbacks) writes instead. Every output records its model and prompt version.
+
+## Accounts
+
+Optional, and passwordless. Sign in at `/signin` with a six-digit code that Cloudflare Email Sending delivers (`worker/accounts.ts`). The same email has a one-tap link, which opens a page that needs a tap so mail scanners can't use it up. Codes are stored as keyed hashes, work once, expire after 15 minutes, and lock after five wrong tries. The session is an HttpOnly, SameSite=Lax cookie holding a random token; only its hash is stored. It slides to 30 days after the last visit, and a cross-site write never counts as signed in.
+
+- **History from before you signed up.** Each role someone plays records a participant id (pid): a keyed hash of their email (`HMAC(TOKEN_SECRET, email)`), on `bills.creator_pid`, `passes.recipient_pid`, `hops.writer_pid` and `follows.pid`. The dashboard (`/me`) reads only pids, so a "stranger in Austin" who signs up later sees every hop, buck and story they touched. Rows from before accounts get their pid from a cron backfill, which reads nothing once it's caught up. **Never rotate `TOKEN_SECRET`**: it would orphan every pid, as well as every outstanding holder link.
+- **Claimed pen names.** An account can claim one pen name (unique, case-insensitive). Only that account's email can sign a hop with it, and those hops show a ✓. Other pen names stay free text. Changing yours later leaves past hops signed as they were.
+- **Keys from your account.** Signed in, the bill page asks `/api/me/keys/:serial` for the holder and creator keys your email is entitled to, so a lost email never strands a buck. The dashboard lists the bucks waiting on you.
+- **Passed a buck? Follow along.** The holder panel carries a private ticket (`pass id + HMAC`) that outlives the holder link. It lets the person follow in one tap at the address the buck reached them at (no confirmation email needed: the link already proved the inbox), and request a sign-in code there, all without the page ever seeing the address.
+- **Every email field is an account offer.** Signed out, following, claiming and releasing each have an optional "pick a pen name" field. Filling it in creates nothing yet. The email we send anyway carries a link (and, for a claim, a code) that proves the inbox, creates the account and claims the pen name in one tap: the follow confirmation ("Confirm and create my account", which confirms the follow too), the creator-key email, or a short email for a claim, finishable on the page. Offers last 7 days. A pen name someone else owns is refused up front, except on a paid release, which never fails over it. If someone claims the name between the offer and the tap, the account is still created and the dashboard asks for another. Claiming a pen name also puts the ✓ on hops that email already signed with it. Wrong codes are capped at 10 per address per day; the emailed link still works past that.
+- **Signed-in shortcuts.** Releasing a buck skips the email field and signs the foreword with your pen name. Claiming pre-fills your email, and following is one tap.
 
 ## Open Books
 
@@ -157,6 +169,13 @@ Every admin call takes `Authorization: Bearer $ADMIN_TOKEN`.
 | `POST /api/admin/feature {serial, featured}` | Feature on the home page |
 | `POST /api/admin/remove-hop {serial, idx}` | Remove an abusive hop. The story recomputes and payout history stays. |
 | `POST /api/admin/cron` · `GET /api/admin/outbox` · `GET /api/admin/inbox` | Run cron now · recent sent emails · received emails |
+| `POST /api/admin/users {email, admin}` · `GET /api/admin/users` | Mark an account as admin (creates it if needed; the person still proves the address at sign-in) · list accounts |
+
+**Admin accounts can release bucks without checkout.** Signed in as an admin, the release and fork forms show "Release it free", which skips PayPal entirely. That's the way around the sandbox checkout, which only accepts sandbox test credentials. The bill is minted with `comped_by` set and no checkout order. The platform funds its first payout as usual, and Open Books lists the release as "Comped by the operator", $0 in, so that payout isn't unexplained. Live mode refuses comps, as it does every payout. To make yourself an admin:
+
+```bash
+curl -X POST https://fourwordpass.com/api/admin/users -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"email":"you@example.com","admin":true}'
+```
 
 ## Demo script notes (PRD §20)
 

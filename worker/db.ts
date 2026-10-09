@@ -9,6 +9,8 @@ export type BillRow = {
   goal_hops: number | null;
   personality: string;
   creator_email: string | null;
+  creator_pid: string | null;
+  comped_by: string | null;
   origin_city: string | null;
   origin_lat: number | null;
   origin_lng: number | null;
@@ -42,6 +44,7 @@ export type PassRow = {
   bill_id: string;
   kind: "mint" | "fork" | "pass" | "claim";
   recipient_email: string;
+  recipient_pid: string | null;
   from_hop_id: string | null;
   status: "pending" | "delivered" | "failed";
   paypal_mode: string;
@@ -69,12 +72,14 @@ export type HopRow = {
   content_words: number;
   note: string | null;
   pen_name: string | null;
+  pen_verified: number;
   city: string | null;
   region: string | null;
   country: string | null;
   lat: number | null;
   lng: number | null;
   writer_email: string | null;
+  writer_pid: string | null;
   received_pass_id: string | null;
   ai_assisted: number;
   inherited_from_hop_id: string | null;
@@ -86,6 +91,16 @@ export type HopRow = {
   fx_lease_until: number;
   created_at: number;
   confirmed_at: number | null;
+};
+
+export type UserRow = {
+  id: string;
+  email: string;
+  pid: string;
+  handle: string | null;
+  is_admin: number;
+  created_at: number;
+  last_seen_at: number | null;
 };
 
 export function personalityOf(bill: Pick<BillRow, "personality">): Personality {

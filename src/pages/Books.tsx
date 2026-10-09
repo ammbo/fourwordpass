@@ -94,6 +94,7 @@ const gridTheme = themeQuartz.withParams({
 const KIND_LABEL: Record<BooksRow["kind"], string> = {
   release: "Release a buck",
   fork: "Fork a story",
+  comp: "Comped by the operator",
   first_holder: "To the first holder",
   claim: "Claim from the wild",
   pass: "Pass the buck",
@@ -226,7 +227,7 @@ export function Books() {
     const outs = rows.filter((r) => r.direction === "out");
     return {
       paidIn: ins.reduce((a, r) => a + r.amount, 0),
-      checkouts: ins.length,
+      checkouts: ins.filter((r) => r.kind !== "comp").length,
       paidOut: landed.reduce((a, r) => a + r.amount, 0),
       landed: landed.length,
       inFlight: outs.filter((r) => r.outcome === "in_flight").length,
@@ -355,7 +356,7 @@ export function Books() {
         {[
           ["UNCLAIMED means delivered", "PayPal holds the dollar for someone who doesn't have a PayPal account yet. In the sandbox that's almost everyone, so it counts as landed."],
           ["Webhook or polling", "We ask PayPal right after every payout, then keep checking with increasing delays. Unclaimed payouts are checked periodically until their final outcome. PayPal also sends a signed webhook, which we verify before trusting. Whichever answers first settles the hop."],
-          ["Who pays for hops", `${mode === "mock" ? "Demo checkouts and payouts are simulated." : "Each sandbox release brings in $2 in test money; the platform funds later test payouts."} Live payments are paused while a model with internal handoffs and a single final payout is being defined.`],
+          ["Who pays for hops", `${mode === "mock" ? "Demo checkouts and payouts are simulated." : "Each sandbox release brings in $2 in test money; the platform funds later test payouts."} An operator can comp a release; it shows here as $0 in. Live payments are paused while a model with internal handoffs and a single final payout is being defined.`],
         ].map(([t, d]) => (
           <div key={t} className="rounded-2xl border border-dashed border-line p-5">
             <div className="font-display text-lg font-semibold">{t}</div>

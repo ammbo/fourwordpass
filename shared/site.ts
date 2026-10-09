@@ -15,7 +15,7 @@ export const FAQ = [
   { question: "Does it cost anything to play?", answer: "Joining a story is free: the dollar comes to you. Starting or forking a story is a $2 checkout: $1 travels with the story and $1 supports the platform. During the sandbox beta, checkout and payouts use PayPal test money; no real money changes hands." },
   { question: "What does “released to the wild” mean?", answer: "Instead of naming the next holder, you can release a buck to the wild. It waits on the public Wild page, and the first person to claim it gets the dollar and writes the next four words. If they don't write within 24 hours, it wanders back to the wild." },
   { question: "What if someone passes me a buck I don't want?", answer: "Send it back. Open the link in your email and choose “Not for you? Send it back.” It returns to whoever passed it to you, and they pick someone else. Their words stay in the story, and you won't hear from it again." },
-  { question: "Do I need an account or an app?", answer: "No Four Word Pass account or download is required. You read stories in your browser, and a private email link is your key to write. Add a pen name if you want credit, or follow a story by email. Starting a story uses the PayPal sandbox test card shown at checkout, so you don't need a PayPal account either." },
+  { question: "Do I need an account or an app?", answer: "No. You read stories in your browser, and a private email link is your key to write. Add a pen name if you want credit, or follow a story by email. An account is optional: sign in with a code we email you, no password, to keep every buck you've touched in one place and claim a pen name nobody else can use. Starting a story uses the PayPal sandbox test card shown at checkout, so you don't need a PayPal account either." },
   { question: "Does AI write the story?", answer: "No. People write the story. AI can suggest words, which you take or ignore, and it plays the bill: a personality, a diary, passport stamp art, and reminders. All of it is labeled and kept apart from the story. The only AI words that ever join a story are a labeled closing, written if a bill sits still for 14 days." },
   { question: "Why PayPal?", answer: "Because the dollar is how the story moves. Each pass is a PayPal payout to the next holder, so every hop has a PayPal receipt behind it, and every dollar in and out is public in the open books." },
   { question: "How does a story end?", answer: "When its creator says so: the person who started it writes the finale, up to twelve words. If a bill stops moving for 14 days, it writes its own eulogy instead. Don't like where a story went? Fork it from any earlier hop and take it somewhere else." },
@@ -25,7 +25,7 @@ export function faqForMode(mode?: PayPalMode | null): {question: string; answer:
   return FAQ.map(item => ({...item, answer: item.question === "Does it cost anything to play?"
     ? `Joining a story is free. Starting or forking a story uses a $2 checkout. ${paymentNotice(mode)}`
     : item.question === "Do I need an account or an app?"
-      ? `No Four Word Pass account or download is required. A private email link is your key to write. ${mode === "sandbox" ? "Use the test card shown at checkout." : mode === "mock" ? "Demo checkout is simulated; no card is needed." : paymentNotice(mode)}`
+      ? `No. A private email link is your key to write. An account is optional: sign in with an emailed code, no password, to keep every buck you've touched in one place and claim a pen name. ${mode === "sandbox" ? "Use the test card shown at checkout." : mode === "mock" ? "Demo checkout is simulated; no card is needed." : paymentNotice(mode)}`
       : item.answer}));
 }
 
@@ -69,8 +69,15 @@ export const PAGES: Record<string, PageMeta> = {
   ...Object.fromEntries(Object.values(INFO_PAGES).map(({ path, title, heading, description }) => [path, { path, title, heading, description }])),
 };
 
+/** App pages that exist for one person: served normally, never indexed or listed in the sitemap. */
+export const PRIVATE_PAGES: Record<string, PageMeta> = {
+  "/signin": { path: "/signin", title: "Sign in · Four Word Pass", description: "Sign in to Four Word Pass with a code we email you. No password.", heading: "Sign in or sign up.", noindex: true },
+  "/me": { path: "/me", title: "Your bucks · Four Word Pass", description: "Every buck you've held, every word you've written, and the stories you started.", heading: "Your bucks", noindex: true },
+};
+
 export function pageMeta(path: string): PageMeta {
   if (PAGES[path]) return PAGES[path];
+  if (PRIVATE_PAGES[path]) return PRIVATE_PAGES[path];
   if (/^\/f\/[^/]+$/.test(path)) return {
     path, title: "Email preferences · Four Word Pass", description: "Manage your private email updates from Four Word Pass.", heading: "Your emails from this buck", noindex: true,
   };

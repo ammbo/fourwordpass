@@ -89,3 +89,19 @@ export function maskEmail(email: string): string {
   const tld = dot > 0 ? domain.slice(dot) : "";
   return `${user.slice(0, 1)}•••@${host.slice(0, 1)}•••${tld}`;
 }
+
+const RESERVED_PEN_NAMES = new Set([
+  "a stranger", "stranger", "anonymous", "admin", "administrator", "moderator", "support",
+  "four word pass", "fourwordpass", "the buck", "the bill",
+]);
+
+/** A pen name you claim on your account. Stricter than a one-off signature, since it's yours for good. */
+export function checkPenName(input: string): { ok: boolean; name: string; error?: string } {
+  const name = normalizeWords(input);
+  let error: string | undefined;
+  if (name.length < 2 || name.length > 24) error = "Pen names run 2 to 24 characters.";
+  else if (LINKY.test(name)) error = "No links or emails in a pen name.";
+  else if (!/^[\p{L}\p{N}][\p{L}\p{N} ._'-]*$/u.test(name) || !/\p{L}/u.test(name)) error = "Letters and numbers, plus spaces, dots, dashes, underscores and apostrophes.";
+  else if (RESERVED_PEN_NAMES.has(name.toLowerCase())) error = "That one's reserved. Pick another.";
+  return { ok: !error, name, error };
+}

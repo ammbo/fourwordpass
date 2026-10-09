@@ -1,11 +1,11 @@
 // Public projections. Emails, payout ids and ai_assisted flags never leave here.
 
-import type { BillSummary, CreatorView, HolderView, PassFailure, PayPalMode, PublicBill, PublicHop, Receipt } from "../shared/types";
+import type { BillSummary, CreatorView, HolderTicket, HolderView, PassFailure, PayPalMode, PublicBill, PublicHop, Receipt } from "../shared/types";
 import { maskEmail } from "../shared/words";
-import { type BillRow, type PassRow, getPass, latestPendingPass, personalityOf } from "./db";
+import { type BillRow, type PassRow, type UserRow, getPass, latestPendingPass, personalityOf } from "./db";
 import { TIMED_OUT } from "./engine";
 import { readHopPage, type StoryCursor } from "./history";
-import { checkCap, maskId, placeFromRequest, placeLabel } from "./util";
+import { capToken, checkCap, maskId, participantId, placeFromRequest, placeLabel } from "./util";
 
 const SUGGESTIONS_PER_HOLDER = 5;
 
@@ -42,6 +42,7 @@ export async function publicBill(env: Env, bill: BillRow, cursor: StoryCursor = 
     words: h.words,
     contentWords: h.content_words,
     penName: h.pen_name,
+    penVerified: !!h.pen_verified,
     place: placeLabel(h),
     lat: h.lat,
     lng: h.lng,
@@ -120,12 +121,13 @@ export async function summaries(env: Env, where: string, order: string, limit: n
   );
 }
 
-export async function holderView(env: Env, req: Request, bill: BillRow, token: string): Promise<HolderView> {
+export async function holderView(env: Env, req: Request, bill: BillRow, token: string, viewer: UserRow | null): Promise<HolderView> {
   if (bill.status === "complete" || bill.status === "eulogized") return { state: "ended" };
 
   // Current holder?
   if (bill.holder_pass_id && (await checkCap(env, "holder", bill.holder_pass_id, token))) {
     const holderPass = (await getPass(env, bill.holder_pass_id))!;
+    const identity = await holderIdentity(env, holderPass, viewer);
     if (bill.status === "in_transit") {
       const out = await latestPendingPass(env, bill.id);
       const hop = out?.from_hop_id ? await env.DB.prepare("SELECT words FROM hops WHERE id = ?").bind(out.from_hop_id).first<{ words: string }>() : null;
@@ -135,6 +137,7 @@ export async function holderView(env: Env, req: Request, bill: BillRow, token: s
         paypalStatus: out?.paypal_status ?? null,
         mode: out?.paypal_mode ?? (env.PAYPAL_MODE as PayPalMode),
         words: hop?.words ?? "",
+        ...identity,
       };
     }
     if (bill.status === "holding") {
@@ -149,6 +152,7 @@ export async function holderView(env: Env, req: Request, bill: BillRow, token: s
         holderSince: bill.holder_since ?? Date.now(),
         returnedBy: await returnedBy(env, bill),
         sendBackTo: holderPass.kind === "claim" ? "wild" : "sender",
+        ...identity,
       };
     }
   }
@@ -156,9 +160,26 @@ export async function holderView(env: Env, req: Request, bill: BillRow, token: s
   // A claimer (or recipient) whose dollar is still in flight.
   const pending = await latestPendingPass(env, bill.id);
   if (pending && (await checkCap(env, "holder", pending.id, token))) {
-    return { state: "arriving", paypalStatus: pending.paypal_status, mode: pending.paypal_mode };
+    return { state: "arriving", paypalStatus: pending.paypal_status, mode: pending.paypal_mode, ...(await holderIdentity(env, pending, viewer)) };
   }
   return { state: "moved_on" };
+}
+
+async function holderIdentity(env: Env, pass: PassRow, viewer: UserRow | null) {
+  const mine = viewer?.pid === (pass.recipient_pid ?? (await participantId(env, pass.recipient_email)));
+  return { ticket: await ticketFor(env, pass), account: viewer && mine ? { handle: viewer.handle } : null };
+}
+
+/** See HolderTicket. Self-describing, so it still checks out after the buck moves on. */
+export async function ticketFor(env: Env, pass: PassRow): Promise<HolderTicket> {
+  return { token: `${pass.id}.${await capToken(env, "ticket", pass.id)}`, email: maskEmail(pass.recipient_email) };
+}
+
+export async function passFromTicket(env: Env, bill: BillRow, ticket: string | null | undefined): Promise<PassRow | null> {
+  const [id, sig] = (ticket ?? "").split(".");
+  if (!(await checkCap(env, "ticket", id, sig))) return null;
+  const pass = await getPass(env, id);
+  return pass?.bill_id === bill.id ? pass : null;
 }
 
 export async function creatorView(env: Env, bill: BillRow, token: string): Promise<CreatorView> {

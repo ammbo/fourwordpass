@@ -1,5 +1,7 @@
 import { Suspense, lazy, useEffect } from "react";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
+import { MeProvider, useMe } from "./account";
+import { Dashboard, SignIn } from "./pages/Account";
 import { BillPage } from "./pages/Bill";
 import { Home } from "./pages/Home";
 import { FollowManage, NotFound, Release, Wild } from "./pages/Other";
@@ -36,7 +38,27 @@ function FollowRoute() {
 }
 
 export function App() {
-  return <PaymentProvider><AppContents /></PaymentProvider>;
+  return <PaymentProvider><MeProvider><AppContents /></MeProvider></PaymentProvider>;
+}
+
+/** Signed out: a quiet "Sign in". Signed in: your initial, linking to your dashboard. */
+function AccountLink() {
+  const { me, loaded } = useMe();
+  if (!loaded) return <span className="h-8 w-8 sm:h-9 sm:w-9" aria-hidden />;
+  if (!me)
+    return (
+      <Link href="/signin" className="grid h-8 w-8 place-items-center rounded-full hover:bg-paper-2 sm:h-9 sm:w-auto sm:px-3" aria-label="Sign in">
+        <svg className="sm:hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" strokeLinecap="round" />
+        </svg>
+        <span className="hidden sm:inline">Sign in</span>
+      </Link>
+    );
+  return (
+    <Link href="/me" className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-ink bg-bill font-display text-sm font-semibold sm:h-9 sm:w-9 sm:text-base" aria-label="Your bucks" title="Your bucks">
+      {(me.handle ?? me.email).slice(0, 1).toUpperCase()}
+    </Link>
+  );
 }
 
 function AppContents() {
@@ -46,20 +68,22 @@ function AppContents() {
       <ScrollToTop />
       <PageMetadata />
       <header className="sticky top-0 z-40 border-b border-line/70 bg-paper/85 backdrop-blur-md">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="Four Word Pass home">
+        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:gap-3">
+          <Link href="/" className="flex items-center gap-2 sm:gap-2.5" aria-label="Four Word Pass home">
             <img src="/logo.svg" width="48" height="36" alt="" className="h-9 w-12 shrink-0" />
-            <span className="whitespace-nowrap font-display text-base font-semibold tracking-tight sm:text-lg">Four Word Pass</span>
+            {/* The narrowest phones keep the logo and drop the wordmark, so the account button fits. */}
+            <span className="whitespace-nowrap font-display text-base font-semibold tracking-tight max-[369px]:hidden sm:text-lg">Four Word Pass</span>
           </Link>
           <div className="flex items-center gap-1 whitespace-nowrap text-sm font-semibold sm:gap-2">
             <Link href="/wild" className="rounded-full px-2.5 py-2 hover:bg-paper-2 sm:px-3">
               <span className="sm:hidden">Wild</span>
               <span className="hidden sm:inline">The wild</span>
             </Link>
-            <Link href="/release" className="btn btn-primary !px-4 !py-2 text-sm">
+            <Link href="/release" className="btn btn-primary !px-3 !py-2 text-sm sm:!px-4">
               <span className="sm:hidden">Release</span>
               <span className="hidden sm:inline">Release a buck</span>
             </Link>
+            <AccountLink />
           </div>
         </nav>
       </header>
@@ -71,6 +95,8 @@ function AppContents() {
           <Route path="/books" component={BooksRoute} />
           <Route path="/b/:serial" component={BillRoute} />
           <Route path="/f/:id" component={FollowRoute} />
+          <Route path="/signin" component={SignIn} />
+          <Route path="/me" component={Dashboard} />
           {INFO_LINKS.map(({ path }) => <Route key={path} path={path} component={Info} />)}
           <Route component={NotFound} />
         </Switch>

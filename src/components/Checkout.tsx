@@ -12,7 +12,7 @@ type PayPalNamespace = {
   Buttons(opts: {
     fundingSource?: string;
     style?: Record<string, unknown>;
-    onClick?: (data: unknown, actions: { resolve(): void; reject(): void }) => void;
+    onClick?: (data: unknown, actions: { resolve(): Promise<void>; reject(): Promise<void> }) => Promise<void> | void;
     createOrder: () => Promise<string>;
     onApprove: (data: { orderID: string }) => Promise<void>;
     onError?: (err: unknown) => void;
@@ -49,8 +49,8 @@ type Props = {
   recoveryKey: string;
   config: AppConfig | null;
   purpose: "mint" | "fork";
-  /** Return an error message to block checkout, or null to proceed. */
-  validate: () => string | null;
+  /** Return an error message to block checkout, or null to proceed. May check with the server first. */
+  validate: () => string | null | Promise<string | null>;
   onPaid: (orderId: string) => Promise<void>;
   onError: (msg: string) => void;
 };
@@ -76,12 +76,13 @@ export function Checkout({ recoveryKey, config, purpose, validate, onPaid, onErr
           // which can't work in the sandbox, and on phones the PayPal app hijacks the sandbox login.
           ...(sandbox && { fundingSource: paypal.FUNDING.CARD }),
           style: { layout: "vertical", shape: "pill", color: "black", label: "pay", height: 48 },
-          onClick: (_d, actions) => {
-            const err = latest.current.validate();
+          onClick: async (_d, actions) => {
+            const err = await latest.current.validate();
             if (err) {
               latest.current.onError(err);
-              actions.reject();
-            } else actions.resolve();
+              return actions.reject();
+            }
+            return actions.resolve();
           },
           createOrder: async () => (await api.checkout(purpose,recoveryKey)).orderId,
           onApprove: async ({ orderID }) => {
@@ -104,7 +105,7 @@ export function Checkout({ recoveryKey, config, purpose, validate, onPaid, onErr
   }, [config?.paypalMode, config?.paypalClientId, purpose, recoveryKey]);
 
   const simulate = async () => {
-    const err = validate();
+    const err = await validate();
     if (err) return onError(err);
     setBusy(true);
     try {

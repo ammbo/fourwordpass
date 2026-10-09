@@ -18,11 +18,12 @@ import { SERIAL_PREFIX } from "../shared/brand";
 import { LIVE_PAYMENT_NOTICE } from "../shared/payments";
 import type { FollowPreference } from "../shared/types";
 import * as ai from "./ai";
+import { OFFER_TTL, challengeLimit, createChallenge, penNameFor } from "./challenges";
 import { type BillRow, type HopRow, type PassRow, getBill, getHop, getPass, personalityOf, storyTail, touch } from "./db";
 import { queueMail, sendMail } from "./email";
 import { DIRTY_MESSAGE, isClean } from "./moderation";
 import { DELIVERED, FAILED, type PayoutState, captureOrder, createPayout, getPayout, isDuplicateBatch, isTransient, paypalMode } from "./paypal";
-import { DAY, HOUR, type Place, appUrl, capToken, newId, now, placeLabel, recoveryHash, sleep } from "./util";
+import { DAY, HOUR, type Place, appUrl, capToken, newId, now, participantId, placeLabel, recoveryHash, sleep } from "./util";
 
 export class UserError extends Error {
   constructor(message: string, public status = 400) {
@@ -51,10 +52,24 @@ function validateShort(text: string | null | undefined, max: number, label: stri
   return t;
 }
 
-function validateEmail(email: string | null | undefined, label = "That email"): string {
+export function validateEmail(email: string | null | undefined, label = "That email"): string {
   const e = lower(email ?? "");
   if (e.length > 254 || !isEmail(e)) throw new UserError(`${label} doesn't look right.`);
   return e;
+}
+
+/**
+ * A claimed pen name signs only for its owner: the account whose email this hop's writer is.
+ * Unclaimed pen names stay free text. A paid mint drops a taken name rather than failing.
+ */
+export async function signature(env: Env, penNameIn: string | null | undefined, writerEmail: string, onTaken: "throw" | "drop" = "throw") {
+  const penName = validateShort(penNameIn, 24, "Your pen name");
+  if (!penName) return { penName: null, verified: 0 };
+  const owner = await env.DB.prepare("SELECT handle, pid FROM users WHERE handle = ? COLLATE NOCASE").bind(penName).first<{ handle: string; pid: string }>();
+  if (!owner) return { penName, verified: 0 };
+  if (owner.pid === (await participantId(env, writerEmail))) return { penName: owner.handle, verified: 1 };
+  if (onTaken === "drop") return { penName: null, verified: 0 };
+  throw new UserError("That pen name is claimed. Sign in as its owner, or pick another.");
 }
 
 const dayOf = (bill: BillRow, t: number) => Math.floor((t - bill.created_at) / DAY) + 1;
@@ -97,13 +112,18 @@ export type MintInput = {
   penName?: string | null;
   showCity?: boolean;
   fork?: { parentSerial: string; atHop: number };
+  /** Set only by the server, for a signed-in admin: no checkout, the platform funds the first payout. */
+  compedBy?: string;
+  /** Make the pen name theirs: the creator-key email also carries a link that creates the account. */
+  createAccount?: boolean;
 };
 
 export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInput): Promise<{ serial: string; creatorToken: string }> {
   const creatorEmail = validateEmail(input.creatorEmail, "Your email");
   const words = validateWords(input.words);
   const theme = validateShort(input.theme, 140, "The theme");
-  const penName = validateShort(input.penName, 24, "Your pen name");
+  const signed = await signature(env, input.penName, creatorEmail, "drop");
+  const creatorPid = await participantId(env, creatorEmail);
   const firstRecipient = input.firstRecipient ? validateEmail(input.firstRecipient, "Your recipient's email") : null;
   if (firstRecipient && firstRecipient === creatorEmail) throw new UserError("Send it to someone else. That's the whole game.");
   const goal = input.goal ? Math.floor(Number(input.goal)) : null;
@@ -119,9 +139,14 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
 
   if (!input.recoveryKey || input.recoveryKey.length < 32 || input.recoveryKey.length > 128) throw new UserError("This checkout needs a recovery key. Refresh before paying.");
   const hash = await recoveryHash(input.recoveryKey);
-  const checkout = await env.DB.prepare("SELECT recovery_hash,purpose,paypal_mode FROM checkout_orders WHERE order_id = ?").bind(input.orderId)
-    .first<{recovery_hash: string; purpose: string; paypal_mode: string}>();
-  if (!checkout || checkout.recovery_hash !== hash || checkout.purpose !== (parent ? "fork" : "mint") || checkout.paypal_mode !== paypalMode(env)) throw new UserError("Use the private recovery key from the original checkout.",403);
+  if (input.compedBy) {
+    // No checkout to verify, but the first payout still has to be possible.
+    if (paypalMode(env) === "live") throw new UserError(LIVE_PAYMENT_NOTICE, 503);
+  } else {
+    const checkout = await env.DB.prepare("SELECT recovery_hash,purpose,paypal_mode FROM checkout_orders WHERE order_id = ?").bind(input.orderId)
+      .first<{recovery_hash: string; purpose: string; paypal_mode: string}>();
+    if (!checkout || checkout.recovery_hash !== hash || checkout.purpose !== (parent ? "fork" : "mint") || checkout.paypal_mode !== paypalMode(env)) throw new UserError("Use the private recovery key from the original checkout.",403);
+  }
   await env.DB.prepare(`INSERT OR IGNORE INTO mint_attempts (order_id,recovery_hash,input_json,place_json,bill_id,paypal_mode,created_at)
     VALUES (?,?,?,?,?,?,?)`).bind(input.orderId, hash, JSON.stringify(input), JSON.stringify(place), newId(), paypalMode(env), now()).run();
   const attempt = (await env.DB.prepare("SELECT * FROM mint_attempts WHERE order_id = ?").bind(input.orderId)
@@ -133,10 +158,12 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
   const billId = attempt.bill_id;
   let bill = await getBill(env, billId);
   if (!bill) {
-    const used = await env.DB.prepare("SELECT 1 FROM bills WHERE checkout_order_id = ?").bind(input.orderId).first();
-    if (used) throw new UserError("That payment already minted a bill. Use the original creator email.", 409);
-    try { await captureOrder(env, input.orderId); }
-    catch (e) { throw new UserError(`Checkout didn't go through: ${(e as Error).message}`, 402); }
+    if (!input.compedBy) {
+      const used = await env.DB.prepare("SELECT 1 FROM bills WHERE checkout_order_id = ?").bind(input.orderId).first();
+      if (used) throw new UserError("That payment already minted a bill. Use the original creator email.", 409);
+      try { await captureOrder(env, input.orderId); }
+      catch (e) { throw new UserError(`Checkout didn't go through: ${(e as Error).message}`, 402); }
+    }
 
     const t = now();
     const origin = input.showCity === false ? null : place;
@@ -148,21 +175,23 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
         theme: theme ?? parent?.theme ?? null, origin: origin ? placeLabel(origin) : "an undisclosed location", serial,
         parentName: parent ? `${parent.serial} (${personalityOf(parent).name})` : undefined, openingWords: words,
       });
-      const stmts = [env.DB.prepare(`INSERT INTO bills (id,seq,serial,status,theme,goal_hops,creator_email,origin_city,origin_lat,origin_lng,
-        forked_from_bill_id,forked_at_hop,checkout_order_id,checkout_mode,created_at,personality)
-        VALUES (?,?,?,'in_transit',?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .bind(billId,next,serial,theme ?? parent?.theme ?? null,goal,creatorEmail,origin ? placeLabel(origin) : null,
-          origin?.lat ?? null,origin?.lng ?? null,parent?.id ?? null,input.fork?.atHop ?? null,input.orderId,attempt.paypal_mode,t,JSON.stringify(pers.personality))];
-      if (parent && input.fork) stmts.push(env.DB.prepare(`INSERT INTO hops (id,bill_id,idx,status,words,content_words,note,pen_name,city,region,country,lat,lng,
+      // A comped bill has no checkout, so Open Books lists it as $0 in rather than a $2 sale.
+      const stmts = [env.DB.prepare(`INSERT INTO bills (id,seq,serial,status,theme,goal_hops,creator_email,creator_pid,origin_city,origin_lat,origin_lng,
+        forked_from_bill_id,forked_at_hop,checkout_order_id,checkout_mode,comped_by,created_at,personality)
+        VALUES (?,?,?,'in_transit',?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .bind(billId,next,serial,theme ?? parent?.theme ?? null,goal,creatorEmail,creatorPid,origin ? placeLabel(origin) : null,
+          origin?.lat ?? null,origin?.lng ?? null,parent?.id ?? null,input.fork?.atHop ?? null,
+          input.compedBy ? null : input.orderId,input.compedBy ? null : attempt.paypal_mode,input.compedBy ?? null,t,JSON.stringify(pers.personality))];
+      if (parent && input.fork) stmts.push(env.DB.prepare(`INSERT INTO hops (id,bill_id,idx,status,words,content_words,note,pen_name,pen_verified,city,region,country,lat,lng,
         inherited_from_hop_id,stamp_key,stamp_status,diary_done,followers_notified,created_at,confirmed_at)
-        SELECT lower(hex(randomblob(16))),?1,idx,'confirmed',words,content_words,note,pen_name,city,region,country,lat,lng,
+        SELECT lower(hex(randomblob(16))),?1,idx,'confirmed',words,content_words,note,pen_name,pen_verified,city,region,country,lat,lng,
         COALESCE(inherited_from_hop_id,id),stamp_key,CASE WHEN stamp_status='ready' THEN 'ready' ELSE 'none' END,1,1,created_at,confirmed_at
         FROM hops WHERE bill_id=?2 AND status='confirmed' AND idx<=?3`).bind(billId,parent.id,input.fork.atHop));
       stmts.push(
-        env.DB.prepare(`INSERT INTO hops (id,bill_id,status,words,content_words,pen_name,city,region,country,lat,lng,writer_email,created_at)
-          VALUES (?,?,'pending',?,4,?,?,?,?,?,?,?,?)`).bind(`opening:${billId}`,billId,words,penName,origin?.city ?? null,origin?.region ?? null,
-            origin?.country ?? null,origin?.lat ?? null,origin?.lng ?? null,creatorEmail,t),
-        env.DB.prepare("INSERT INTO follows (id,bill_id,email,preference,created_at) VALUES (?,?,?,'every_hop',?)").bind(`creator:${billId}`,billId,creatorEmail,t),
+        env.DB.prepare(`INSERT INTO hops (id,bill_id,status,words,content_words,pen_name,pen_verified,city,region,country,lat,lng,writer_email,writer_pid,created_at)
+          VALUES (?,?,'pending',?,4,?,?,?,?,?,?,?,?,?,?)`).bind(`opening:${billId}`,billId,words,signed.penName,signed.verified,origin?.city ?? null,origin?.region ?? null,
+            origin?.country ?? null,origin?.lat ?? null,origin?.lng ?? null,creatorEmail,creatorPid,t),
+        env.DB.prepare("INSERT INTO follows (id,bill_id,email,pid,preference,created_at) VALUES (?,?,?,?,'every_hop',?)").bind(`creator:${billId}`,billId,creatorEmail,creatorPid,t),
         env.DB.prepare("UPDATE bills SET follower_count = 1 WHERE id = ?").bind(billId), recountStmt(env,billId),
         env.DB.prepare("INSERT INTO diary (id,bill_id,kind,day_label,text,ai_meta,created_at) VALUES (?,?,'birth','Day 1',?,?,?)")
           .bind(newId(),billId,pers.birthEntry,JSON.stringify(pers.meta),t),
@@ -180,6 +209,11 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
   const pers = {personality: personalityOf(bill)};
   const creatorToken = await capToken(env, "creator", billId);
   const share = appUrl(env, `/b/${bill.serial}`);
+  // A paid release never fails over its account offer; a pen name that can't be claimed just isn't offered.
+  const wanted = input.createAccount && !signed.verified && input.penName ? await penNameFor(env, input.penName, creatorEmail) : null;
+  const offer = wanted && "name" in wanted && !(await challengeLimit(env, creatorEmail, false))
+    ? { handle: wanted.name, ...(await createChallenge(env, creatorEmail, { id: `offer:${billId}`, handle: wanted.name, next: `/b/${bill.serial}`, ttl: OFFER_TTL })) }
+    : null;
   // Queue the creator key before returning success, even if immediate delivery is interrupted.
   await queueMail(env, {
       deliveryKey: `creator:${billId}`,
@@ -199,6 +233,10 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
       quoteLabel: "Your foreword",
       button: { label: "End the story (when it's time)", url: appUrl(env, `/b/${bill.serial}?c=${creatorToken}`) },
       unsubscribeUrl: appUrl(env, `/f/${followId}?t=${await capToken(env, "follow", followId)}`),
+      ...(offer && {
+        secondary: { label: `Finish my account as ${offer.handle}`, url: offer.url },
+        footer: `You asked to make “${offer.handle}” your pen name. The link above proves this address and creates your account; it works once, for 7 days.`,
+      }),
     });
   try {
     if (bill.status === "in_transit" && !bill.active_pass_id && firstRecipient) {
@@ -218,6 +256,12 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
 
 // ====================================================================== passes (money)
 
+// Per-inbox ceilings, so nobody can point the game at someone's address and flood it.
+const PASSES_PER_RECIPIENT_PER_DAY = 5;
+const FOLLOW_CONFIRMS_PER_RECIPIENT_PER_DAY = 3;
+const HOP_MAIL_GAP = 3 * HOUR;
+const RESEND_GAP = HOUR;
+
 /** A slow payout remains reserved until PayPal supplies a definitive outcome. */
 const PASS_TIMEOUT = 2 * HOUR;
 export const TIMED_OUT = "PayPal didn't confirm this payout in time.";
@@ -233,13 +277,24 @@ async function startPass(
   const t = now();
   const mode = paypalMode(env);
   if (mode === "live") throw new UserError(LIVE_PAYMENT_NOTICE, 503);
+  const pid = await participantId(env, p.email);
+  if (p.kind === "pass" || p.kind === "claim") {
+    const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM passes WHERE recipient_pid = ? AND kind IN ('pass','claim') AND created_at > ?")
+      .bind(pid, t - DAY).first<{ n: number }>();
+    if ((recent?.n ?? 0) >= PASSES_PER_RECIPIENT_PER_DAY) {
+      if (p.fromHopId) await env.DB.prepare("UPDATE hops SET status = 'void' WHERE id = ? AND status = 'pending'").bind(p.fromHopId).run();
+      throw new UserError(p.kind === "claim"
+        ? "That address has claimed plenty of bucks today. Try again tomorrow."
+        : "That person has been passed plenty of bucks today. Pick someone else, or release it to the wild.", 429);
+    }
+  }
   // D1 batch is a transaction: either both reservation and pass exist, or neither does.
   const reserved = await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO passes (id, bill_id, kind, recipient_email, from_hop_id, sender_pass_id, status, paypal_mode, next_poll_at, created_at)
-       SELECT ?,?,?,?,?,?,'pending',?,?,? WHERE EXISTS
+      `INSERT INTO passes (id, bill_id, kind, recipient_email, recipient_pid, from_hop_id, sender_pass_id, status, paypal_mode, next_poll_at, created_at)
+       SELECT ?,?,?,?,?,?,?,'pending',?,?,? WHERE EXISTS
        (SELECT 1 FROM bills WHERE id = ? AND status = ? AND version = ? AND active_pass_id IS NULL)`,
-    ).bind(passId, bill.id, p.kind, p.email, p.fromHopId, p.senderPassId, mode, t + 3000, t, bill.id, bill.status, bill.version),
+    ).bind(passId, bill.id, p.kind, p.email, pid, p.fromHopId, p.senderPassId, mode, t + 3000, t, bill.id, bill.status, bill.version),
     env.DB.prepare(`UPDATE bills SET status = 'in_transit', active_pass_id = ?, version = version + 1
        WHERE id = ? AND EXISTS (SELECT 1 FROM passes WHERE id = ?)`)
       .bind(passId, bill.id, passId),
@@ -477,7 +532,7 @@ async function emailHolder(env: Env, pass: PassRow, resend = false) {
         ? "A simulated $1 payout came with me."
         : "PayPal just sent you $1.00. That's me.";
   return sendMail(env, {
-    deliveryKey: `${resend ? "resend" : "holder"}:${pass.id}${resend ? `:${Math.floor(now() / 300_000)}` : ""}`,
+    deliveryKey: `${resend ? "resend" : "holder"}:${pass.id}${resend ? `:${Math.floor(now() / RESEND_GAP)}` : ""}`,
     to: pass.recipient_email,
     kind: resend ? "holder_resend" : "holder",
     billId: bill.id,
@@ -522,7 +577,7 @@ export async function resendHolderLink(env: Env, bill: BillRow) {
   const pass = await getPass(env, bill.holder_pass_id);
   if (!pass) return;
   const allowed = await env.DB.prepare("UPDATE passes SET resend_at = ? WHERE id = ? AND (resend_at IS NULL OR resend_at < ?)")
-    .bind(now(), pass.id, now() - 300_000).run();
+    .bind(now(), pass.id, now() - RESEND_GAP).run();
   if (allowed.meta.changes) await emailHolder(env, pass, true);
 }
 
@@ -590,9 +645,13 @@ export async function paintHopStamp(env: Env, hop: HopRow, motif: string) {
 async function goalReached(env: Env, bill: BillRow) {
   await addDiary(env, bill, "goal", `${bill.goal_hops} hops. We actually did it. I'd like to thank every pocket that held me.`);
   if (!bill.creator_email) return;
+  const followId = `creator:${bill.id}`;
+  const optedOut = await env.DB.prepare("SELECT opted_out FROM follows WHERE id = ?").bind(followId).first<{ opted_out: number }>();
+  if (optedOut?.opted_out) return;
   await sendMail(env, {
     to: bill.creator_email,
     kind: "goal",
+    unsubscribeUrl: appUrl(env, `/f/${followId}?t=${await capToken(env, "follow", followId)}`),
     billId: bill.id,
     serial: bill.serial,
     subject: `${personalityOf(bill).name} hit ${bill.goal_hops} hops. Ready to write the ending?`,
@@ -621,18 +680,18 @@ export async function contribute(env: Env, ctx: Ctx, place: Place, bill: BillRow
   const holderPass = (await getPass(env, bill.holder_pass_id))!;
   const words = validateWords(input.words);
   const note = validateShort(input.note, 140, "Your note");
-  const penName = validateShort(input.penName, 24, "Your pen name");
+  const signed = await signature(env, input.penName, holderPass.recipient_email);
   const next = input.next ? validateEmail(input.next, "The next person's email") : null;
   if (next && next === holderPass.recipient_email) throw new UserError("You can't pass it to yourself. Nice try.");
   const p = input.showCity === false ? null : place;
 
   const hopId = newId();
   await env.DB.prepare(
-    `INSERT INTO hops (id, bill_id, status, words, content_words, note, pen_name, city, region, country, lat, lng,
-       writer_email, received_pass_id, ai_assisted, created_at)
-     VALUES (?,?,'pending',?,4,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).bind(hopId, bill.id, words, note, penName, p?.city ?? null, p?.region ?? null, p?.country ?? null, p?.lat ?? null, p?.lng ?? null,
-    holderPass.recipient_email, holderPass.id, input.aiAssisted ? 1 : 0, now()).run();
+    `INSERT INTO hops (id, bill_id, status, words, content_words, note, pen_name, pen_verified, city, region, country, lat, lng,
+       writer_email, writer_pid, received_pass_id, ai_assisted, created_at)
+     VALUES (?,?,'pending',?,4,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).bind(hopId, bill.id, words, note, signed.penName, signed.verified, p?.city ?? null, p?.region ?? null, p?.country ?? null, p?.lat ?? null, p?.lng ?? null,
+    holderPass.recipient_email, holderPass.recipient_pid ?? await participantId(env, holderPass.recipient_email), holderPass.id, input.aiAssisted ? 1 : 0, now()).run();
 
   if (!next) {
     await releaseToWild(env, ctx, bill, hopId, holderPass.id, "holding");
@@ -840,25 +899,78 @@ export async function returnToWild(env: Env, bill: BillRow) {
 
 // ====================================================================== followers
 
-export async function follow(env: Env, bill: BillRow, emailIn: string, preference: FollowPreference) {
+/**
+ * Follow by a typed email: nothing starts until its owner confirms. With a pen name, the confirmation
+ * also offers an account: one tap proves the address, confirms the follow and claims the name.
+ * Returns whether that offer went out, so the caller can send it separately when this email doesn't.
+ */
+export async function follow(env: Env, bill: BillRow, emailIn: string, preference: FollowPreference, penName: string | null = null): Promise<{ offered: boolean }> {
   const email = validateEmail(emailIn);
   const id = newId();
-  await env.DB.prepare(`INSERT OR IGNORE INTO follows (id,bill_id,email,preference,verified,created_at) VALUES (?,?,?,?,0,?)`)
-    .bind(id,bill.id,email,preference,now()).run();
+  const pid = await participantId(env, email);
+  await env.DB.prepare(`INSERT OR IGNORE INTO follows (id,bill_id,email,pid,preference,verified,created_at) VALUES (?,?,?,?,?,0,?)`)
+    .bind(id,bill.id,email,pid,preference,now()).run();
   const row = (await env.DB.prepare("SELECT id,opted_out FROM follows WHERE bill_id = ? AND email = ?").bind(bill.id,email).first<{id: string; opted_out: number}>())!;
-  if (row.opted_out) return; // Only the private preferences link can undo an opt-out.
+  if (row.opted_out) return { offered: false }; // Only the private preferences link can undo an opt-out.
+  // Strangers can type any address, across any number of bucks. Cap what one inbox receives.
+  const sentToday = await env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE pid = ? AND confirmation_sent_at > ?")
+    .bind(pid, now() - DAY).first<{ n: number }>();
+  if ((sentToday?.n ?? 0) >= FOLLOW_CONFIRMS_PER_RECIPIENT_PER_DAY) return { offered: false };
   const allowed = await env.DB.prepare(`UPDATE follows SET confirmation_sent_at = ? WHERE id = ?
     AND (confirmation_sent_at IS NULL OR confirmation_sent_at < ?)`)
     .bind(now(),row.id,now() - HOUR).run();
-  if (!allowed.meta.changes) return;
+  if (!allowed.meta.changes) return { offered: false };
+  const manage = appUrl(env, `/f/${row.id}?t=${await capToken(env,"follow",row.id)}`);
+  const name = personalityOf(bill).name;
+  const offer = penName && !(await challengeLimit(env, email, false))
+    ? await createChallenge(env, email, { handle: penName, followId: row.id, next: `/b/${bill.serial}`, ttl: OFFER_TTL })
+    : null;
   await queueMail(env, {
     deliveryKey: `follow-confirm:${row.id}:${Math.floor(now() / HOUR)}`,
     to: email, kind: "follow_confirm", billId: bill.id, serial: bill.serial,
-    subject: `Confirm emails from ${personalityOf(bill).name}`,
-    heading: "Follow this story?",
-    paragraphs: ["Someone requested story updates for this address. Open the link and confirm your preference to start receiving them. If that wasn't you, ignore this email; you haven't been subscribed."],
-    button: {label: "Confirm or manage emails", url: appUrl(env, `/f/${row.id}?t=${await capToken(env,"follow",row.id)}`)},
+    ...(offer ? {
+      subject: `Follow ${name}, and make “${penName}” yours`,
+      heading: "Follow this story, and make it yours?",
+      paragraphs: [
+        `Someone requested story updates for this address and asked to create a Four Word Pass account with the pen name “${penName}”. One tap does both, and the link works once, for 7 days. Once the pen name is yours, nobody else can sign with it.`,
+        "If that wasn't you, ignore this email: nothing is subscribed and no account is created.",
+      ],
+      button: { label: "Confirm and create my account", url: offer.url },
+      secondary: { label: "Just confirm the emails, no account", url: manage },
+    } : {
+      subject: `Confirm emails from ${name}`,
+      heading: "Follow this story?",
+      paragraphs: ["Someone requested story updates for this address. Open the link and confirm your preference to start receiving them. If that wasn't you, ignore this email; you haven't been subscribed."],
+      button: { label: "Confirm or manage emails", url: manage },
+    }),
+    unsubscribeUrl: manage,
   });
+  return { offered: !!offer };
+}
+
+/** Change or stop one subscription, from its emailed manage link or its owner's dashboard. */
+export async function setFollowPreference(env: Env, followId: string, billId: string, preference: FollowPreference | "unfollow") {
+  await env.DB.batch([
+    preference === "unfollow"
+      ? env.DB.prepare("UPDATE follows SET verified = 0, opted_out = 1 WHERE id = ?").bind(followId)
+      : env.DB.prepare("UPDATE follows SET preference = ?, verified = 1, opted_out = 0 WHERE id = ?").bind(preference, followId),
+    env.DB.prepare("UPDATE bills SET follower_count = (SELECT COUNT(*) FROM follows WHERE bill_id = ?1 AND verified = 1), version = version + 1 WHERE id = ?1").bind(billId),
+  ]);
+}
+
+/**
+ * Follow without a confirmation email, for an address that's already proven: a signed-in
+ * account, or the holder's own address from the link we emailed them. An explicit follow
+ * from the proven owner also lifts an earlier opt-out.
+ */
+export async function followVerified(env: Env, bill: BillRow, emailIn: string, preference: FollowPreference) {
+  const email = validateEmail(emailIn);
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO follows (id,bill_id,email,pid,preference,verified,created_at) VALUES (?,?,?,?,?,1,?)
+      ON CONFLICT(bill_id,email) DO UPDATE SET preference = excluded.preference, verified = 1, opted_out = 0, pid = excluded.pid`)
+      .bind(newId(), bill.id, email, await participantId(env, email), preference, now()),
+    env.DB.prepare("UPDATE bills SET follower_count = (SELECT COUNT(*) FROM follows WHERE bill_id = ?1 AND verified = 1), version = version + 1 WHERE id = ?1").bind(bill.id),
+  ]);
 }
 
 async function notifyFollowers(env: Env, bill: BillRow, kind: "hop" | "end" | "stall", p: { hop?: HopRow; diaryLine?: string | null; note?: string }) {
@@ -879,14 +991,16 @@ export async function runNotificationJobs(env: Env) {
 
 async function sendFollowerPage(env: Env, bill: BillRow, kind: "hop" | "end" | "stall", p: { hop?: HopRow; diaryLine?: string | null; note?: string }, job: {id: string; cursor: string}) {
   const prefs = kind === "end" ? ["every_hop", "on_end"] : ["every_hop"];
-  const { results } = await env.DB.prepare(`SELECT id, email FROM follows WHERE bill_id = ? AND verified = 1 AND id > ? AND preference IN (${prefs.map(() => "?").join(",")}) ORDER BY id LIMIT 100`)
+  const { results } = await env.DB.prepare(`SELECT id, email, hop_mail_at FROM follows WHERE bill_id = ? AND verified = 1 AND id > ? AND preference IN (${prefs.map(() => "?").join(",")}) ORDER BY id LIMIT 100`)
     .bind(bill.id, job.cursor, ...prefs)
-    .all<{ id: string; email: string }>();
+    .all<{ id: string; email: string; hop_mail_at: number | null }>();
   const url = appUrl(env, `/b/${bill.serial}`);
   const name = personalityOf(bill).name;
   const tail = kind === "end" ? await storyTail(env, bill.id, 40) : "";
   for (const f of results) {
     if (kind === "hop" && p.hop?.writer_email === f.email) continue; // they know; they wrote it
+    // A fast-moving buck shouldn't bury its followers; the page always has every hop.
+    if (kind === "hop" && f.hop_mail_at && f.hop_mail_at > now() - HOP_MAIL_GAP) continue;
     const unsubscribeUrl = appUrl(env, `/f/${f.id}?t=${await capToken(env, "follow", f.id)}`);
     if (kind === "hop" && p.hop) {
       const place = hopPlace(p.hop);
@@ -899,6 +1013,7 @@ async function sendFollowerPage(env: Env, bill: BillRow, kind: "hop" | "end" | "
         quote: p.hop.words, quoteLabel: p.hop.pen_name ? `New words from ${p.hop.pen_name}` : `New words from a stranger in ${place}`,
         button: { label: "Read the whole story", url }, unsubscribeUrl,
       });
+      await env.DB.prepare("UPDATE follows SET hop_mail_at = ? WHERE id = ?").bind(now(), f.id).run();
     } else if (kind === "stall") {
       await queueMail(env, {
         deliveryKey: `${job.id}:${f.id}`, subscriptionId: f.id,

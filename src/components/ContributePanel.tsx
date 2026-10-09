@@ -1,7 +1,8 @@
 import { payoutDescription } from "../../shared/payments";
 import { useEffect, useRef, useState } from "react";
-import type { HolderView, PassFailure, PublicBill } from "../../shared/types";
+import type { HolderTicket, HolderView, PassFailure, PublicBill } from "../../shared/types";
 import { checkFourWords, isEmail, maskEmail } from "../../shared/words";
+import { VerifiedMark } from "../account";
 import { api } from "../api";
 import { FollowBox } from "./FollowBox";
 import { ShareButton } from "./ShareButton";
@@ -29,6 +30,8 @@ export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
   const prevState = useRef<string | null>(null);
   const transitWords = useRef("");
   const holdingTurn = useRef<number | null>(null);
+  // Outlives the holder link, so following along still works once the buck has moved on.
+  const ticket = useRef<HolderTicket | null>(null);
 
   useEffect(() => {
     const url = new URL(location.href);
@@ -44,6 +47,7 @@ export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
       try {
         const v = await api.holder(bill.serial, token);
         if (!alive) return;
+        if ("ticket" in v) ticket.current = v.ticket;
         if (v.state === "holding" && v.holderSince !== holdingTurn.current) {
           holdingTurn.current = v.holderSince;
           setLanded(false); setSentTo(null); setDeclined(null);
@@ -98,8 +102,8 @@ export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
               ? "PayPal confirmed the payout. It's their turn to write."
               : "PayPal confirmed the payout, so the story moved. You're part of it now."}
         </p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <FollowBox serial={bill.serial} compact dark />
+        <div className="mt-5 grid items-start gap-3 sm:grid-cols-2">
+          <FollowBox serial={bill.serial} compact dark ticket={ticket.current} />
           <ShareButton serial={bill.serial} dark />
         </div>
       </PanelShell>
@@ -138,8 +142,8 @@ export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
           </p>
           <FlyingBill />
           <PayPalStatus status={view.paypalStatus} mode={view.mode} />
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <FollowBox serial={bill.serial} compact />
+          <div className="mt-5 grid items-start gap-3 sm:grid-cols-2">
+            <FollowBox serial={bill.serial} compact ticket={view.ticket} />
             <ShareButton serial={bill.serial} />
           </div>
         </PanelShell>
@@ -151,7 +155,7 @@ export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
           // Show the in-flight state immediately; polling takes over from here.
           prevState.current = "in_transit";
           transitWords.current = words;
-          setView({ state: "in_transit", recipient: maskEmail(recipient), paypalStatus: "PENDING", mode: bill.paymentMode, words });
+          setView({ state: "in_transit", recipient: maskEmail(recipient), paypalStatus: "PENDING", mode: bill.paymentMode, words, ticket: view.ticket, account: view.account });
         }
         onDone();
       };
@@ -232,6 +236,13 @@ function WritingDesk({ bill, token, view, wantsDecline, onSent, onDeclined }: {
   const [next, setNext] = useState("");
   const [note, setNote] = useState("");
   const [penName, setPenName] = useState("");
+  // Signed in as the person it was passed to, with a claimed pen name: sign with it unless they'd rather not.
+  const handle = view.account?.handle ?? null;
+  const [signAs, setSignAs] = useState(!!handle);
+  // Signing in mid-turn (finishing a claim's account) brings the pen name with it: sign with it by default.
+  useEffect(() => {
+    if (handle) setSignAs(true);
+  }, [handle]);
   const [showCity, setShowCity] = useState(true);
   const [more, setMore] = useState(false);
   const [options, setOptions] = useState<string[]>([]);
@@ -290,7 +301,7 @@ function WritingDesk({ bill, token, view, wantsDecline, onSent, onDeclined }: {
     setBusy(true);
     setError(null);
     try {
-      await api.contribute(bill.serial, { t: token, words, next: toWild ? null : next, note: note || undefined, penName: penName || undefined, showCity, aiAssisted });
+      await api.contribute(bill.serial, { t: token, words, next: toWild ? null : next, note: note || undefined, penName: (handle && signAs ? handle : penName) || undefined, showCity, aiAssisted });
       onSent(toWild ? "wild" : "someone", words.trim(), next.trim());
     } catch (e) {
       setError((e as Error).message);
@@ -345,12 +356,18 @@ function WritingDesk({ bill, token, view, wantsDecline, onSent, onDeclined }: {
 
       <NextHolder toWild={toWild} setToWild={setToWild} next={next} setNext={setNext} wildNote="Anyone can claim it from the Wild page. Your words land the moment you release it." />
 
+      {handle && (
+        <label className="mt-4 flex items-center gap-2.5 text-sm">
+          <input type="checkbox" className="h-4 w-4 accent-[#17402f]" checked={signAs} onChange={(e) => setSignAs(e.target.checked)} />
+          <span>Sign as <b>{handle}</b><VerifiedMark /> <span className="text-muted">(your pen name)</span></span>
+        </label>
+      )}
       <button type="button" className="mt-4 text-sm font-semibold text-ink-3 underline-offset-4 hover:underline" onClick={() => setMore((m) => !m)}>
-        {more ? "− Fewer options" : "+ Sign it, leave a note, or hide your city"}
+        {more ? "− Fewer options" : handle && signAs ? "+ Leave a note, or hide your city" : "+ Sign it, leave a note, or hide your city"}
       </button>
       {more && (
         <div className="mt-3 space-y-3">
-          <input className="field" value={penName} onChange={(e) => setPenName(e.target.value)} maxLength={24} placeholder="Pen name (optional)" />
+          {!(handle && signAs) && <input className="field" value={penName} onChange={(e) => setPenName(e.target.value)} maxLength={24} placeholder="Pen name (optional)" />}
           <input className="field" value={note} onChange={(e) => setNote(e.target.value)} maxLength={140} placeholder="A note for the bill's diary (not part of the story)" />
           <label className="flex items-center gap-2.5 text-sm">
             <input type="checkbox" className="h-4 w-4 accent-[#17402f]" checked={showCity} onChange={(e) => setShowCity(e.target.checked)} />

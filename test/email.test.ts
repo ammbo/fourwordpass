@@ -21,7 +21,8 @@ it("keeps service mail within the provider's header contract and includes the pu
   const message = send.mock.calls[0][0] as { from: { name: string }; replyTo?: string; headers?: Record<string, string>; html: string; text: string };
   expect(message.from.name).toBe("Four Word Pass");
   expect(message.replyTo).toBe(SUPPORT_EMAIL);
-  expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
+  expect(message.headers?.["List-Unsubscribe"]).toBe("<https://fourwordpass.com/api/follows/test-settings/unsubscribe>");
+  expect(message.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
   for (const { path } of INFO_LINKS) {
     expect(message.html).toContain(`https://fourwordpass.com${path}`);
     expect(message.text).toContain(`https://fourwordpass.com${path}`);

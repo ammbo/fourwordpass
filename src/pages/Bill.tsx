@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import type { PublicBill, PublicHop } from "../../shared/types";
 import { isEmail } from "../../shared/words";
-import { api, useLiveBill, useUrlToken } from "../api";
+import { CodeSignIn, PenNameOffer, VerifiedMark, penNameError, useMe } from "../account";
+import { type PendingAccount, api, useLiveBill, useUrlToken } from "../api";
 import { Banknote } from "../components/Banknote";
 import { ContributePanel } from "../components/ContributePanel";
 import { CreatorPanel } from "../components/CreatorPanel";
@@ -26,14 +27,32 @@ export function BillPage() {
   const serial = raw.toUpperCase();
   const { bill, error, errorStatus, refresh, changePage, loadingPage } = useLiveBill(serial);
   const [holderToken, setHolderToken] = useUrlToken("t", serial, "session");
-  const [creatorToken] = useUrlToken("c", serial, "local");
+  const [creatorToken, setCreatorToken] = useUrlToken("c", serial, "local");
+  const { me } = useMe();
   const [isNew] = useState(() => new URLSearchParams(location.search).has("new"));
+  // A release that asked to make its pen name an account: the creator-key email has the link.
+  const [accountRequested] = useState(() => new URLSearchParams(location.search).get("account"));
+  // A claim that asked for an account: its code is on the way, and can be entered here.
+  const [pendingAccount, setPendingAccount] = useState<PendingAccount | null>(null);
   const [active, setActive] = useState<Active>(null);
   const [forkAt, setForkAt] = useState<PublicHop | null>(null);
   // Phones stack the inspector below the whole story, so a tapped line opens a sheet instead.
   const [picked, setPicked] = useState<number | null>(null);
   const [claiming, setClaiming] = useState(false);
   const fresh = useFreshHop(bill);
+
+  // Signed in, your account is your key: no email link needed to write in, pass on, or end a story.
+  const version = bill?.version;
+  useEffect(() => {
+    if (!me || (holderToken && creatorToken) || version === undefined) return;
+    let alive = true;
+    api.myKeys(serial).then((keys) => {
+      if (!alive) return;
+      if (keys.t && !holderToken) setHolderToken(keys.t);
+      if (keys.c && !creatorToken) setCreatorToken(keys.c);
+    }, () => {});
+    return () => { alive = false; };
+  }, [me, serial, version, holderToken, creatorToken, setHolderToken, setCreatorToken]);
 
   useEffect(() => {
     if (bill) updateMetadata(billMeta({
@@ -69,6 +88,13 @@ export function BillPage() {
   return (
     <article className="h-entry mx-auto max-w-6xl px-4 pb-24 pt-6 sm:pt-10">
       <a className="u-url sr-only" href={`${SITE_URL}/b/${bill.serial}`}>Story permalink</a>
+      {pendingAccount && !me && (
+        <section className="card mb-4 border-gold/50 p-5">
+          <div className="eyebrow !text-gold">Your account</div>
+          <div className="mt-1 font-display text-xl font-semibold">Finish making “{pendingAccount.penName}” yours.</div>
+          <div className="mt-3 max-w-md"><CodeSignIn pending={pendingAccount} onSignedIn={() => setPendingAccount(null)} /></div>
+        </section>
+      )}
       {holderToken && !ended && (
         <div className="mb-8">
           <ContributePanel bill={bill} token={holderToken} onDone={refresh} onObsolete={() => setHolderToken(null)} />
@@ -80,6 +106,7 @@ export function BillPage() {
           <div className="font-display text-2xl font-semibold">It's alive. Meet {bill.personality.name}.</div>
           <p className="mt-1 text-paper/80">
             {bill.status === "wild" ? "It's loose in the wild, waiting to be claimed." : "It's on its way to its first holder."} Your creator-key email is queued: it's how you'll write the ending.
+            {accountRequested && !me && <> It also has the link that makes “{accountRequested}” yours and creates your account.</>}
           </p>
           <div className="mt-4 max-w-xs"><ShareButton serial={bill.serial} dark /></div>
         </div>
@@ -244,8 +271,9 @@ export function BillPage() {
         <ClaimModal
           serial={bill.serial}
           onClose={() => setClaiming(false)}
-          onClaimed={(t) => {
+          onClaimed={(t, account) => {
             setHolderToken(t);
+            setPendingAccount(account);
             setClaiming(false);
             window.scrollTo({ top: 0, behavior: "smooth" });
             refresh();
@@ -279,7 +307,7 @@ function Inspector({ bill, hop, placeKey: pk, onFork, onClose }: { bill: PublicB
         </div>
       </div>
       <div className="mt-1 font-display text-xl">“{hop.words}”</div>
-      <div className="mt-1 text-sm text-muted">{hop.penName ? <><b className="text-ink">{hop.penName}</b> in {hop.place}</> : `A stranger in ${hop.place}`}</div>
+      <div className="mt-1 text-sm text-muted">{hop.penName ? <><b className="text-ink">{hop.penName}</b>{hop.penVerified && <VerifiedMark />} in {hop.place}</> : `A stranger in ${hop.place}`}</div>
       {hop.note && <div className="mt-2 rounded-lg bg-paper-2 px-3 py-2 text-sm italic">Note to the bill: {hop.note}</div>}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         {hop.receipt ? (
@@ -333,9 +361,11 @@ function FamilyTree({ bill }: { bill: PublicBill }) {
   );
 }
 
-function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: () => void; onClaimed: (token: string) => void }) {
+function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: () => void; onClaimed: (token: string, account: PendingAccount | null) => void }) {
   const mode = usePaymentMode();
-  const [email, setEmail] = useState("");
+  const { me } = useMe();
+  const [email, setEmail] = useState(me?.email ?? "");
+  const [penName, setPenName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
@@ -343,10 +373,13 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
     e.preventDefault();
     if (!isEmail(email)) return setError("We need your PayPal email to send you the dollar.");
     if (!accepted) return setError("Confirm you're 18 or older and agree to the terms before claiming.");
+    const pen = me ? "" : penName.trim();
+    if (penNameError(pen)) return setError(penNameError(pen));
     setBusy(true);
     setError(null);
     try {
-      onClaimed((await api.claim(serial, email)).token);
+      const out = await api.claim(serial, email, pen || undefined);
+      onClaimed(out.token, out.account);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -357,6 +390,7 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
       <form onSubmit={submit}>
         <p className="text-muted">{payoutDescription(mode)} {paymentNotice(mode)} When the handoff lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
         <input className="field mt-4" type="email" inputMode="email" autoFocus aria-label="Email for your holder link" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={mode === "mock" ? "your email" : "your PayPal email"} />
+        {!me && <PenNameOffer value={penName} onChange={(v) => { setPenName(v); setError(null); }} />}
         <ParticipationTerms checked={accepted} onChange={setAccepted} />
         {error && <div className="mt-3 text-sm font-medium text-serial">{error}</div>}
         <button className="btn btn-primary mt-4 w-full !py-3.5" disabled={busy || mode === "live" || !mode}>{busy ? "Claiming…" : "Claim it"}</button>

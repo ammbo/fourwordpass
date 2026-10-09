@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AppConfig, BillSummary, CreatorView, FollowPreference, HolderView, HomeData, OpenBooks, PublicBill } from "../shared/types";
+import type { AppConfig, BillSummary, CreatorView, Dashboard, FollowPreference, HolderView, HomeData, Me, OpenBooks, PublicBill } from "../shared/types";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -19,8 +19,10 @@ async function req<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export type MintBody = {
-  orderId: string;
-  recoveryKey: string;
+  orderId?: string;
+  recoveryKey?: string;
+  /** A signed-in admin's release without checkout. */
+  free?: boolean;
   creatorEmail: string;
   words: string;
   theme?: string | null;
@@ -28,7 +30,12 @@ export type MintBody = {
   firstRecipient?: string | null;
   penName?: string | null;
   showCity?: boolean;
+  /** Signed out: make the pen name theirs. The creator-key email carries the link that creates the account. */
+  createAccount?: boolean;
 };
+
+/** An account waiting on the emailed code or link. */
+export type PendingAccount = { challenge: string; sentTo: string; penName: string };
 
 export const api = {
   config: () => req<AppConfig & { place?: string | null }>("/api/config"),
@@ -45,14 +52,29 @@ export const api = {
   contribute: (serial: string, body: { t: string; words: string; next: string | null; note?: string; penName?: string; showCity: boolean; aiAssisted: boolean }) =>
     req<{ state: "wild" | "in_transit" }>(`/api/bills/${serial}/contribute`, body),
   suggest: (serial: string, body: { t?: string; c?: string; mode?: "finale" }) => req<{ options: string[]; left?: number }>(`/api/bills/${serial}/suggest`, body),
-  claim: (serial: string, email: string) => req<{ token: string }>(`/api/bills/${serial}/claim`, { email }),
+  claim: (serial: string, email: string | null, penName?: string) =>
+    req<{ token: string; account: PendingAccount | null }>(`/api/bills/${serial}/claim`, { ...(email ? { email } : {}), ...(penName ? { penName } : {}) }),
   decline: (serial: string, t: string) => req<{ state: "returned" | "wild" }>(`/api/bills/${serial}/decline`, { t }),
   repass: (serial: string, body: { t?: string; c?: string; next: string | null }) => req<{ state: "wild" | "in_transit" }>(`/api/bills/${serial}/repass`, body),
-  follow: (serial: string, email: string, preference: FollowPreference) => req<{ ok: true }>(`/api/bills/${serial}/follow`, { email, preference }),
+  /** By typed email (confirmation link), by holder ticket, or as the signed-in account (no fields). */
+  follow: (serial: string, as: { email?: string; ticket?: string; penName?: string }, preference: FollowPreference) =>
+    req<{ ok: true; verified: boolean; account?: boolean }>(`/api/bills/${serial}/follow`, { ...as, preference }),
   finale: (serial: string, c: string, words: string) => req<{ ok: true }>(`/api/bills/${serial}/finale`, { c, words }),
   resend: (serial: string) => req<{ ok: true }>(`/api/bills/${serial}/resend`, {}),
   followGet: (id: string, t: string) => req<{ preference: FollowPreference | null; verified?: number; serial: string | null }>(`/api/follows/${id}?t=${encodeURIComponent(t)}`),
   followSet: (id: string, t: string, preference: FollowPreference | "unfollow") => req<{ ok: true }>(`/api/follows/${id}`, { t, preference }),
+
+  me: () => req<{ me: Me | null }>("/api/me"),
+  /** Email a code to a typed address, or to the one a holder ticket or creator key was sent to. */
+  signInStart: (body: { email?: string; serial?: string; ticket?: string; c?: string; next?: string | null; penName?: string }) =>
+    req<{ challenge: string; sentTo: string }>("/api/auth/start", body),
+  signInVerify: (body: { challenge: string; code?: string; link?: string }) => req<{ me: Me; penNameTaken: string | null }>("/api/auth/verify", body),
+  signOut: () => req<{ ok: true }>("/api/auth/signout", {}),
+  claimPenName: (handle: string) => req<{ me: Me }>("/api/me/handle", { handle }),
+  penName: (name: string) => req<{ claimed: boolean; yours: boolean }>(`/api/pen-names/${encodeURIComponent(name)}`),
+  dashboard: () => req<Dashboard>("/api/me/dashboard"),
+  myKeys: (serial: string) => req<{ t: string | null; c: string | null }>(`/api/me/keys/${serial}`),
+  myFollow: (id: string, preference: FollowPreference | "unfollow") => req<{ ok: true }>(`/api/me/follows/${id}`, { preference }),
 };
 
 /** Fetch once, keep the last good value. */
