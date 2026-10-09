@@ -270,7 +270,7 @@ function Inspector({ bill, hop, placeKey: pk, onFork, onClose }: { bill: PublicB
         {hop.receipt ? (
           <span className="chip !font-mono !text-[0.68rem] !font-medium" title="The PayPal payout that put this bill in the writer's hands">
             <span className="text-[#003087]">Pay</span><span className="-ml-1.5 text-[#0070e0]">Pal</span>
-            {hop.receipt.mode === "sandbox" ? "sandbox" : hop.receipt.mode === "mock" ? "simulated" : "demo"} payout {hop.receipt.item} · {hop.receipt.status}
+            {{ live: "", sandbox: "sandbox ", mock: "simulated ", seed: "demo " }[hop.receipt.mode]}payout {hop.receipt.item} · {hop.receipt.status}
           </span>
         ) : <span />}
         <button type="button" className="text-sm font-semibold text-ink-3 underline-offset-4 hover:underline" onClick={() => onFork(hop)}>

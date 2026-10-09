@@ -2,12 +2,14 @@
 // The platform is the sender of record on every payout, so we observe every hop
 // directly — no scraping, no third-party feeds.
 //
-// PAYPAL_MODE=mock simulates both APIs so the whole loop runs without credentials.
+// PAYPAL_MODE picks the environment: live (real money), sandbox (test money), or mock.
+// Mock simulates both APIs so the whole loop runs without credentials.
 // Mock payouts settle ~3s after creation; any recipient containing "+fail" fails.
 
 import { HOP_AMOUNT, MINT_PRICE } from "../shared/brand";
+import type { PayPalMode } from "../shared/types";
 
-const SANDBOX = "https://api-m.sandbox.paypal.com";
+const API_BASE = { live: "https://api-m.paypal.com", sandbox: "https://api-m.sandbox.paypal.com" };
 
 export type PayoutState = {
   status: string;               // PENDING | SUCCESS | UNCLAIMED | FAILED | ...
@@ -24,11 +26,13 @@ export type PayoutState = {
 export const DELIVERED = new Set(["SUCCESS", "UNCLAIMED"]);
 export const FAILED = new Set(["FAILED", "BLOCKED", "DENIED", "RETURNED", "REFUNDED", "REVERSED", "CANCELED"]);
 
-export function paypalMode(env: Env): "sandbox" | "mock" {
+export function paypalMode(env: Env): PayPalMode {
   if (env.PAYPAL_MODE === "mock") return "mock";
   if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_CLIENT_SECRET) return "mock";
-  return "sandbox";
+  return env.PAYPAL_MODE === "live" ? "live" : "sandbox";
 }
+
+const apiBase = (env: Env) => API_BASE[paypalMode(env) === "live" ? "live" : "sandbox"];
 
 let cachedToken: { value: string; expires: number; clientId: string } | null = null;
 
@@ -36,7 +40,7 @@ async function accessToken(env: Env): Promise<string> {
   if (cachedToken && cachedToken.clientId === env.PAYPAL_CLIENT_ID && cachedToken.expires > Date.now()) {
     return cachedToken.value;
   }
-  const res = await fetch(`${SANDBOX}/v1/oauth2/token`, {
+  const res = await fetch(`${apiBase(env)}/v1/oauth2/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_CLIENT_SECRET}`)}`,
@@ -56,7 +60,7 @@ async function api<T>(env: Env, path: string, init: { method?: string; body?: un
     "Content-Type": "application/json",
   };
   if (init.idempotencyKey) headers["PayPal-Request-Id"] = init.idempotencyKey;
-  const res = await fetch(`${SANDBOX}${path}`, {
+  const res = await fetch(`${apiBase(env)}${path}`, {
     method: init.method ?? "GET",
     headers,
     body: init.rawBody ?? (init.body === undefined ? undefined : JSON.stringify(init.body)),

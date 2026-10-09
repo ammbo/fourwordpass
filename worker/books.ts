@@ -5,6 +5,7 @@
 
 import type { BooksRow, OpenBooks } from "../shared/types";
 import { countContent } from "../shared/words";
+import { paypalMode } from "./paypal";
 import { maskId } from "./util";
 
 const LEDGER_LIMIT = 2000;
@@ -77,7 +78,8 @@ export async function openBooks(env: Env): Promise<OpenBooks> {
       secondsToLand: null,
       settledBy: null,
       webhook: false,
-      mode: b.checkout_order_id.startsWith("MOCKORDER-") ? "mock" : "sandbox",
+      // Checkouts don't record their mode; real orders are labeled with the current one.
+      mode: b.checkout_order_id.startsWith("MOCKORDER-") ? "mock" : paypalMode(env),
     })),
     ...passes.results.map((p): BooksRow => ({
       id: opaque(p.id),
@@ -94,7 +96,7 @@ export async function openBooks(env: Env): Promise<OpenBooks> {
       // A signed webhook arriving no later than settlement means PayPal told us first.
       settledBy: p.status === "pending" ? null : p.webhook_at && p.settled_at && p.webhook_at <= p.settled_at + 1000 ? "webhook" : "polling",
       webhook: !!p.webhook_at,
-      mode: p.paypal_mode === "mock" ? "mock" : "sandbox",
+      mode: p.paypal_mode as BooksRow["mode"],
     })),
   ].sort((a, b) => b.at - a.at);
 

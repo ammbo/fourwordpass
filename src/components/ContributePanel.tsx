@@ -295,7 +295,7 @@ function PayPalStatus({ status, mode }: { status: string | null; mode: string })
     <div className="flex items-center gap-2 text-sm">
       <span className="h-2 w-2 animate-pulse-soft rounded-full bg-gold" />
       <span className="font-mono text-xs uppercase tracking-wider text-muted">
-        PayPal {mode === "mock" ? "(simulated)" : "sandbox"} payout · {status ?? "creating"}
+        PayPal {mode === "mock" ? "(simulated) " : mode === "live" ? "" : "sandbox "}payout · {status ?? "creating"}
       </span>
     </div>
   );

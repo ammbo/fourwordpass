@@ -23,7 +23,7 @@ export async function publicBill(env: Env, bill: BillRow): Promise<PublicBill> {
   const receipts = new Map<string, Receipt>();
   for (const p of passesRes.results) {
     receipts.set(p.id, {
-      mode: p.paypal_mode === "mock" ? "mock" : "sandbox",
+      mode: p.paypal_mode as Receipt["mode"],
       item: maskId(p.payout_item_id ?? p.payout_batch_id),
       status: p.paypal_status ?? "SUCCESS",
     });

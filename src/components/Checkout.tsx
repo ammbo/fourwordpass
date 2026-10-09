@@ -65,16 +65,18 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
   const latest = useRef({ validate, onPaid, onError });
   latest.current = { validate, onPaid, onError };
   const [busy, setBusy] = useState(false);
+  const sandbox = config?.paypalMode === "sandbox";
+  const real = sandbox || config?.paypalMode === "live";
 
   useEffect(() => {
-    if (config?.paypalMode !== "sandbox" || !config.paypalClientId || !el.current) return;
+    if (!real || !config.paypalClientId || !el.current) return;
     let buttons: PayPalButtons | null = null;
     let cancelled = false;
     loadSdk(config.paypalClientId)
       .then((paypal) => {
         if (cancelled || !el.current) return;
         buttons = paypal.Buttons({
-          ...(isMobile && { fundingSource: paypal.FUNDING.CARD }),
+          ...(sandbox && isMobile && { fundingSource: paypal.FUNDING.CARD }),
           style: { layout: "vertical", shape: "pill", color: "black", label: "pay", height: 48 },
           onClick: (_d, actions) => {
             const err = latest.current.validate();
@@ -124,13 +126,15 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
         <div className="flex justify-between text-muted"><span>$1 to keep the lights on</span><span className="font-mono">$1.00</span></div>
         <div className="mt-1.5 flex justify-between border-t border-line pt-1.5 font-semibold"><span>Total</span><span className="font-mono">$2.00</span></div>
       </div>
-      {config?.paypalMode === "sandbox" ? (
+      {real ? (
         <>
-          <TestCard />
+          {sandbox && <TestCard />}
           <div ref={el} className={busy ? "pointer-events-none opacity-50" : ""} />
-          <p className="mt-2 text-center text-xs text-muted">
-            {isMobile ? "PayPal sandbox. No real money moves." : "Have a PayPal sandbox login? Use the PayPal button instead. No real money moves."}
-          </p>
+          {sandbox && (
+            <p className="mt-2 text-center text-xs text-muted">
+              {isMobile ? "PayPal sandbox. No real money moves." : "Have a PayPal sandbox login? Use the PayPal button instead. No real money moves."}
+            </p>
+          )}
         </>
       ) : (
         <>
@@ -140,7 +144,7 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
           <p className="mt-2 text-center text-xs text-muted">Demo mode: PayPal is simulated until sandbox keys are configured.</p>
         </>
       )}
-      {busy && config?.paypalMode === "sandbox" && <p className="mt-2 text-center text-sm font-medium">Printing your buck…</p>}
+      {busy && real && <p className="mt-2 text-center text-sm font-medium">Printing your buck…</p>}
     </div>
   );
 }

@@ -10,8 +10,10 @@ export type Personality = {
   quirks: string[];
 };
 
+export type PayPalMode = "live" | "sandbox" | "mock";
+
 export type Receipt = {
-  mode: "sandbox" | "mock" | "seed";
+  mode: PayPalMode | "seed";
   item: string;        // masked payout item id, e.g. "••••7QX2"
   status: string;      // SUCCESS | UNCLAIMED | ...
 };
@@ -109,7 +111,7 @@ export type CreatorView =
   | { valid: true; canEnd: boolean; status: BillStatus; hopCount: number; goalHops: number | null };
 
 export type AppConfig = {
-  paypalMode: "sandbox" | "mock";
+  paypalMode: PayPalMode;
   paypalClientId: string | null;
 };
 
@@ -128,7 +130,7 @@ export type BooksRow = {
   secondsToLand: number | null;
   settledBy: "webhook" | "polling" | null;
   webhook: boolean;      // a signed PayPal webhook arrived for it
-  mode: "sandbox" | "mock";
+  mode: PayPalMode;
 };
 
 export type OpenBooks = {

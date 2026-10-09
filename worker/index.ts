@@ -57,7 +57,7 @@ app.get("/api/config", (c) => {
   const place = placeFromRequest(c.req.raw);
   return c.json<AppConfig & { place: string | null }>({
     paypalMode: mode,
-    paypalClientId: mode === "sandbox" ? c.env.PAYPAL_CLIENT_ID : null,
+    paypalClientId: mode === "mock" ? null : c.env.PAYPAL_CLIENT_ID,
     place: place.city || place.country ? placeLabel(place) : null,
   });
 });

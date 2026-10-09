@@ -38,7 +38,8 @@
   "vars": {
     "APP_URL": "https://fourwordpass.com",
     "MAIL_FROM": "buck@fourwordpass.com",
-    // "sandbox" uses the PayPal sandbox API; "mock" simulates payouts locally (no credentials needed).
+    // "live" uses real PayPal (needs live credentials and webhook id); "sandbox" uses the PayPal sandbox API;
+    // "mock" simulates payouts locally (no credentials needed).
     "PAYPAL_MODE": "sandbox",
     // "send" uses the EMAIL binding; "log" stores emails in D1 and prints them (dev).
     "EMAIL_MODE": "send"
