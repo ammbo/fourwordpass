@@ -30,7 +30,7 @@ Checked against the official rules, overview, FAQ and AG Grid sponsor page on Oc
 
 - [ ] **Make the repo public** and set its About: *A real dollar travels hand to hand through PayPal. Each holder adds four words to its story.* · `https://fourwordpass.com`. MIT is already detected, so the license shows once it's public.
 - [ ] **Keep this file out of the public repo.** It's tracked (it went in with commit 4de561c), so making the repo public publishes it and its history. Nothing in it is secret today.
-- [ ] **Give Open Books a real story.** Right now it shows 3 payouts and $0 in, and the "who wrote the words" and "AI by model" charts are empty, because seeded bills are left out of those charts. Start two or three stories through checkout, pass each through a few emails, and write one finale, so every chart has data before you record.
+- [ ] **Run a real relay by Oct 16.** This one job feeds the video, Open Books and the story. Right now Open Books shows 3 payouts and $0 in, and its "who wrote the words" and "AI by model" charts are empty because seeded bills are left out. The long demo stories (Wendell, Valentine) were written by AI seeding, so the video and this page can't show them as written by people. Mint two or three hero bills through checkout, pass them through 10 to 12 friends in different cities, fork one, and write one finale. The plan is in [video-concepts.md](video-concepts.md).
 - [ ] **Stock the wild for judging, not just for the deadline.** A bill in the wild dies 14 days after it got there, and a claimer who never writes keeps it for 24 hours. Seeds made around Nov 10 die around Nov 24, a week before judging. Seed a batch on the morning of **Dec 1**, top it up around Dec 8, and keep 8 to 10 in the wild so a judge never finds it empty. FWP-0002 is the only bill there now; it was claimed and returned on Oct 9, so it dies around Oct 23.
 - [ ] **Join the hackathon on Devpost** if you haven't. The submit form only appears for registered participants.
 - [ ] **Upload the video as Public** on YouTube, under 3:00.
@@ -49,70 +49,65 @@ Four Word Pass
 ## Elevator pitch (200 characters max; this is 190)
 
 ```text
-A real dollar travels stranger to stranger through PayPal. Each holder adds four words to the story it carries, then passes the buck. AI plays the bill, never the author. The books are open.
+A dollar that's never spent, only passed. It travels stranger to stranger through PayPal, and each holder adds four words to the story it carries. AI plays the bill. People write every word.
 ```
 
 ## About the project
 
 ````markdown
+> *"I was never spent. Only passed. That's the good way to go."*
+>
+> Valentine the Crumpled, a dollar bill, in the eulogy it wrote for itself
+
 ## Inspiration
 
-A dollar bill is the most-traveled object most of us ever hold, and it never tells you where it's been. [Where's George?](https://www.wheresgeorge.com) has had people logging bill serials since 1998. The surrealists played *exquisite corpse*, where each player adds to a work without seeing the whole. We wanted both at once: a real dollar that travels hand to hand and carries a story written by every hand it passes through.
+Cash used to carry stories. People wrote phone numbers on dollar bills, stamped them, and logged their serials on [Where's George?](https://www.wheresgeorge.com) to see where they went next. A bill passed through hundreds of hands and kept a little of each one.
 
-PayPal makes that possible. You can't watch money move between strangers, but you can watch every payment you send. If the platform is the sender on every hop, every pass of the buck is a real, verifiable payment. Nobody has to trust that the dollar moved, because PayPal says so, and we can publish the books to prove it.
+Digital money carries nothing. You tap, it moves, it's gone. The most-traveled thing most of us touch has no memory at all.
+
+We wanted a digital dollar with a passage: one that travels hand to hand, carries a story written by every hand it passes through, and can prove every step of the trip. The surrealists' *exquisite corpse* gave us the writing game, where each player adds a piece without controlling the whole. PayPal gave us the proof. If the platform sends every payment itself, every pass of the buck is a real payment that PayPal confirms, and we can open the books.
 
 ## What it does
 
-**Four Word Pass** turns a $1 PayPal payment into a storytelling object.
+Four Word Pass is a $1 PayPal payment that's never spent, only passed. Here's the life of one bill.
 
-1. **Start a story for $2.** One dollar rides with the bill and one keeps the lights on. You write the first four words (*the Foreword*), then name the first holder by email or release the bill to *the wild*, a public page where any stranger can claim it.
-2. **Add four words.** Whoever holds the bill adds exactly four words that count. Little words like *the, a, to, of* ride free, so grammar still works. A live counter shows which words count. Stuck? AI suggests three continuations. It never writes for you.
-3. **Pass the buck.** Name the next person, or release the bill to the wild. The platform sends the next holder $1 through PayPal Payouts. **Your words join the story only when the payout lands.**
+**It's born.** Someone pays $2 to start a story: $1 rides with the bill and $1 keeps the lights on. They write the first four words, *the Foreword*. AI gives the bill a name, a voice and a few quirks. (One of ours is Wendell the Damp: *"Rained on in six countries. Still not dry."*) Then they name the first holder by email, or release the bill to *the wild*, where any stranger can claim it.
 
-Joining a story is free. Holders need no account, no app and no PayPal login. A hop takes about a minute.
+**It's passed.** The holder gets an email and opens the link. There's no account, no app and no PayPal login. They add exactly four words that count. Little words like *the, a, to, of* ride free so grammar still works, but "and then the lights dimmed" gets *"That's 2 content words. The buck demands four."* Stuck? AI offers three continuations, and the holder picks one or ignores them. Then they pass the buck, and the platform sends the next holder $1 through PayPal Payouts. **Their words join the story only when PayPal says the dollar landed.** Joining is free, and a hop takes about a minute.
 
-Every bill also grows a life of its own:
+**It remembers.** After every hop the bill writes a diary entry in its own voice about the new words and the city it just left. Its passport gets a stamp with the city, the date and an ink illustration painted for that place. A map, *The Passage*, traces it city to city.
 
-- **A personality.** At mint, the bill gets a name, a voice and a few quirks.
-- **A diary.** After every hop the bill writes a first-person entry about the new words and where it just was.
-- **A passport.** Every hop prints a stamp with the city, date, serial, hop number and a small ink illustration.
-- **The Passage.** A map traces the bill city to city.
-- **Nags.** Sit on a bill and it gets needy at 24 hours, dramatic at 3 days, and theatrical at 7.
-- **Send it back.** Not for you? One link sends the bill back to whoever passed it to you, and they pick someone else. Their words stay in the story.
-- **A eulogy.** After 14 days without moving, the bill is declared lost. It writes its own eulogy and closes the story with a short ending that is always labeled.
-- **Forks.** Don't like where a story went? Fork it from any hop into a new bill and take it somewhere else. Bills keep a family tree.
-- **Followers.** Anyone can follow a bill by email and hear when it moves, stalls or ends.
+**It gets needy.** Sit on a bill and it nags you: needy at one day, dramatic at three, theatrical at seven. Not for you? One link sends it back to whoever passed it to you, and they pick someone else.
 
-### Open Books
+**It branches.** Don't like where a story went? Fork it from any hop into a new bill. Bills keep a family tree, and anyone can follow one by email.
 
-Because the platform takes every checkout and sends every payout itself, it can publish all of them. **[Open Books](https://fourwordpass.com/books)** is a live public ledger of every dollar in and out, built with **AG Grid** and **AG Charts**:
+**It ends.** The creator can write the finale whenever they like. A bill that sits still for 14 days is declared lost. It writes its own eulogy and a short closing, always labeled as the bill's.
 
-- **The ledger:** every $2 checkout and $1 payout, with the bill, the hop whose words rode on it, PayPal's status, a masked PayPal reference, how long it took to land, and whether a signed webhook or polling confirmed it. Sort it, filter it, search it, export it to CSV. Status cells flash when PayPal answers.
-- **The charts:** money in vs. out by day, payouts by PayPal status, time to land, who wrote the words, and the bill's AI writing by model. Every chart and total is computed from the ledger's filtered rows, so filtering to one bill re-slices the whole page. Each bill page links to its own slice.
-- **The words count too.** One chart shows what share of story words came from people (holders and creators' finales) versus a lost bill's labeled AI closing.
+### Two rules hold it together
 
-Emails never leave the server, and PayPal references are masked.
-
-### PayPal moves the money. The AI reacts to it.
-
-Every word of the story comes from a person who held the buck. AI plays the bill, and the bill reacts to what the money does:
-
-- **A payout lands:** the bill writes a diary entry about the new words, and its passport gets a stamp painted for that city.
-- **The money sits still:** the bill nags its holder, louder at 1, 3 and 7 days, and posts about it in its public diary.
-- **The money stops for 14 days:** the bill writes its own eulogy.
-
-The AI never moves money and never writes the story. It names the bill, gives it a voice, and offers word suggestions a person has to accept. Text reaches a story outside a holder's hop in only two ways: the creator writes the finale, or a lost bill writes its own ending. That ending is always labeled, and it's capped at about 5% of the story:
+**People write the story. AI plays the bill.** The AI names the bill, writes its diary, nags its holders, paints its stamps and offers suggestions a person has to accept. It never moves money, and it never writes a hop. The only AI text that can enter a story is a lost bill's closing, which is labeled and capped at about 5% of the story:
 
 $$ \text{closing words} = \min\big(12,\ \max(1,\ \lfloor 0.05 \cdot w \rfloor)\big) $$
 
 where \\( w \\) is the number of content words in the story.
 
+**The story moves only when the money does.** Clicking a button never advances a bill. A payout that PayPal confirms does. The money drives the AI too: a landed payout gets a diary entry and a stamp, money that sits still gets nags, and money that stops for 14 days gets a eulogy.
+
+### Open Books
+
+The platform takes every checkout and sends every payout, so it can publish all of them. **[Open Books](https://fourwordpass.com/books)** is a live public ledger of every dollar in and out, built with **AG Grid** and **AG Charts**.
+
+- **The ledger:** every $2 checkout and $1 payout, with its bill, the hop whose words rode on it, PayPal's status, a masked PayPal reference, how long it took to land, and whether a signed webhook or polling confirmed it. Sort, filter, search, export to CSV. Status cells flash when PayPal answers.
+- **The charts:** money in vs. out by day, payouts by PayPal status, time to land, who wrote the words (people vs. a lost bill's labeled closing), and the bill's AI writing by model. Every chart is computed from the ledger's filtered rows, so filtering to one bill re-slices the whole page. Every bill page links to its own slice.
+
+Emails never leave the server, and PayPal references are masked.
+
 ## Who it's for, and why it matters
 
-Payment apps treat money as plumbing. Four Word Pass treats a payment as something that can carry meaning, and that opens it up to people who'd never open a payments app for fun.
+Payment apps treat money as plumbing. Four Word Pass treats a payment as something that can carry meaning, and that opens it to people who'd never open a payments app for fun.
 
-- **Friends and strangers who want a small, real reason to connect.** Joining is free, and starting a story costs $2. A story can be a gift to a friend in another city, a game for a group chat or a book club, or a message in a bottle for a stranger. An email link is the whole onboarding.
-- **PayPal.** In production, every hop is a $1 payout to someone who may not have PayPal yet. That's an invitation with a dollar in it and a story attached, sent by someone who chose them. Each story is a chain of people meeting PayPal by getting paid.
+- **Friends and strangers who want a small, real reason to connect.** A story can be a gift to a friend in another city, a game for a group chat or a book club, or a message in a bottle for a stranger. An email link is the whole onboarding.
+- **PayPal.** In production, every hop is a $1 payout to someone who may not have PayPal yet. That's an invitation with a dollar in it and a story attached, sent by someone who chose them. Every story is a chain of people meeting PayPal by getting paid.
 - **Anyone who pays people and has to prove it.** Mutual aid funds, fundraisers, creator funds and marketplaces all get asked "did the money actually go out?" Open Books is a working answer. When the platform is the sender of record, it can publish every payment with PayPal's own status, confirmed by signed webhooks, without exposing anyone.
 
 ## How we built it
@@ -181,8 +176,8 @@ We built it with Claude Code as a pair programmer, working from a written PRD.
 ## What's next
 
 - Production Payouts approval and a self-funding relay: each passer pays $1 in through Orders, and the next holder gets $1 out through Payouts. Open Books would then balance to the cent.
-- A storybook view for finished stories.
-- Badges for people who keep bills moving.
+- *Read a Buck*: a storybook view for finished stories.
+- Badges for people who keep bills moving, starting with *Paperback*, for when a bill finds its way back to someone who held it before.
 ````
 
 ## Built with
@@ -257,17 +252,23 @@ Shot list, in order. 1500×1000 works well. Shoot Open Books after it has real s
 [YouTube URL]
 ```
 
-The Presentation criterion asks three things: what problem is solved, who it's for, and why it matters. Say all three in the first 20 seconds, then show it working end to end. Shoot the holder's part on a phone, since that's where the email lands. Use YouTube Audio Library music or none.
+Concepts, the recommended cut ("Never Spent", 2:40), the AI shot list and the motion graphics list are in [video-concepts.md](video-concepts.md).
 
-- **0:00** The hook: "Payment apps treat a dollar like plumbing. What if it carried a story?" One line on who it's for: friends and strangers who want a reason to connect, and anyone who pays people and has to prove it.
-- **0:20** Start a story on a computer. Write the Foreword, pay with the sandbox test card, and meet the bill's new personality.
-- **0:45** On a phone: the email arrives ("Someone passed you a story. Add four words."). Open the link with no signup. Type "and then the lights dimmed" and get "The buck demands four." Take an AI suggestion and edit a word.
-- **1:10** Pass it on. Show the payout receipt chip and the bill page updating live: words, map pin, diary entry, passport stamp.
-- **1:35** Click "Its PayPal ledger." Open Books shows the $2 checkout and the $1 payouts for this bill, with PayPal's statuses and the verified webhook. Clear the filter and watch the charts re-slice.
-- **2:00** Claim a bill from the wild in a second browser.
-- **2:15** Fork from an earlier hop and show the family tree.
-- **2:30** A seeded long bill: the map lit up, the passport, a nag email, a eulogy with its labeled closing.
-- **2:45** Close: "Every hop is a real PayPal payment. Every word is written by a person. And the books are open."
+The Presentation criterion asks three things: what problem is solved, who it's for, and why it matters. The recommended cut answers all three by 0:32, then shows the real app working on a laptop and a phone. Music must be licensed for this use (YouTube Audio Library, or an AI music tool whose plan grants commercial rights), and any AI voice must be original, not a clone of a real person.
+
+**Description for YouTube** (paste under the video):
+
+```text
+A dollar that's never spent, only passed. Four Word Pass sends a real $1 PayPal sandbox payout to every person who holds a bill, and each holder adds four words to the story it carries. AI plays the bill: it names itself, keeps a diary, nags, paints passport stamps and writes its own eulogy. People write every word of the story. Every payment is on a public ledger.
+
+Built for the PayPal AI Hackathon with PayPal Orders v2, Payouts and Webhooks, Cloudflare Workers AI, and AG Grid + AG Charts.
+
+Try it: https://fourwordpass.com
+Open Books: https://fourwordpass.com/books
+Code: https://github.com/ammbo/fourwordpass
+
+[Narration adapted from FWP-XXXX's real diary. Scene illustrations are AI-generated; every app screen is a real recording.]
+```
 
 ---
 
