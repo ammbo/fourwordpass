@@ -18,10 +18,12 @@ type Props = {
   bill: PublicBill;
   active: Active;
   onActive: (a: Active) => void;
+  /** A tap or click on a line, as opposed to a hover. */
+  onPick?: (idx: number) => void;
   freshIdx?: number | null;
 };
 
-export function Story({ bill, active, onActive, freshIdx }: Props) {
+export function Story({ bill, active, onActive, onPick, freshIdx }: Props) {
   const [showAll, setShowAll] = useState(false);
   const hops = bill.hops;
   const hidden = !showAll && hops.length > WINDOW ? hops.length - WINDOW : 0;
@@ -60,7 +62,10 @@ export function Story({ bill, active, onActive, freshIdx }: Props) {
                 data-inherited={h.inherited}
                 data-fresh={freshIdx === h.idx}
                 onMouseEnter={() => onActive({ hop: h.idx })}
-                onClick={() => onActive({ hop: h.idx })}
+                onClick={() => {
+                  onActive({ hop: h.idx });
+                  onPick?.(h.idx);
+                }}
               >
                 {h.words}
               </span>{" "}

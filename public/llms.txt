@@ -6,7 +6,7 @@ Canonical site: https://fourwordpass.com
 
 ## Current status
 
-Four Word Pass is a PayPal sandbox beta. Checkout and payouts use test money; no real money changes hands. Releasing or forking a bill uses a $2 sandbox checkout. Holding and contributing are free. Sandbox checkout requires a PayPal sandbox buyer account.
+Four Word Pass is a PayPal sandbox beta. Checkout and payouts use test money; no real money changes hands. Releasing or forking a bill uses a $2 sandbox checkout. Holding and contributing are free. Sandbox checkout takes the PayPal sandbox test card shown on the checkout page, or a PayPal sandbox buyer account on desktop.
 
 ## Public pages
 

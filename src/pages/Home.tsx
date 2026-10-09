@@ -37,21 +37,28 @@ export function Home() {
             Pass the buck. Write a story. Four words at a time.
           </p>
           <p className="mt-4 max-w-lg text-lg leading-relaxed text-ink-2">
-            A dollar travels from person to person through PayPal. Each holder adds four words to the story it carries, then passes it on. The bill keeps a diary.
+            A dollar travels from person to person through PayPal. Each holder adds exactly four words to the story it carries, then passes it on.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <Link href="/release" className="btn btn-primary !px-6 !py-3.5 !text-base">Release a buck · $2</Link>
-            <Link href="/wild" className="btn btn-ghost !px-6 !py-3.5 !text-base">Claim one from the wild</Link>
+            <Link href="/release" className="btn btn-primary !px-6 !py-3.5 !text-base">Start a story · $2</Link>
+            <Link href="/wild" className="btn btn-ghost !px-6 !py-3.5 !text-base">Join a story · free</Link>
           </div>
-          <p className="mt-3 text-sm text-muted">Holders play free. No account, no app. About sixty seconds.</p>
+          <p className="mt-3 text-sm text-muted">No account, no app. About sixty seconds.</p>
           <p className="mt-2 max-w-lg text-xs leading-relaxed text-muted">{BETA_NOTICE}</p>
         </div>
-        <div className="relative">
-          <div className="absolute -inset-6 -z-10 rounded-[40px] bg-[radial-gradient(closest-side,rgba(169,123,28,.18),transparent)]" />
-          <Link href={hero ? `/b/${hero.serial}` : "/release"} className="block transition hover:-rotate-1">
-            <Banknote serial={hero?.serial ?? "FWP-0001"} persona={hero?.personaName ?? "Dolores the Restless"} words={words} hops={hero?.hopCount ?? 12} tilt={2.5} />
-          </Link>
-          <div className="absolute -bottom-5 left-6 right-10 -z-10 h-full rotate-[-5deg] rounded-[3.5%] border-2 border-ink/30 bg-bill/70" />
+        <div>
+          <div className="relative">
+            <div className="absolute -inset-6 -z-10 rounded-[40px] bg-[radial-gradient(closest-side,rgba(169,123,28,.18),transparent)]" />
+            <Link href={hero ? `/b/${hero.serial}` : "/release"} className="block transition hover:-rotate-1">
+              <Banknote serial={hero?.serial ?? "FWP-0001"} persona={hero?.personaName ?? "Dolores the Restless"} words={words} hops={hero?.hopCount ?? 12} tilt={2.5} />
+            </Link>
+            <div className="absolute -bottom-5 left-6 right-10 -z-10 h-full rotate-[-5deg] rounded-[3.5%] border-2 border-ink/30 bg-bill/70" />
+          </div>
+          {hero && (
+            <Link href={`/b/${hero.serial}`} className="mt-10 block text-center text-sm font-semibold text-ink underline-offset-4 hover:underline">
+              Read the story this buck carries →
+            </Link>
+          )}
         </div>
       </section>
 
@@ -81,9 +88,9 @@ export function Home() {
         <h2 className="font-display text-3xl font-semibold sm:text-4xl">How the buck moves</h2>
         <div className="mt-8 grid gap-5 md:grid-cols-3">
           {[
-            ["01", "Write the foreword", "Release a buck for $2: one dollar rides with the bill, one keeps the lights on. You write the first four words and pick who gets it first, or set it loose in the wild."],
+            ["01", "Write the foreword", "Start a story for $2: one dollar rides with the bill, one keeps the lights on. You write the first four words, then send it to someone or release it to the wild, a public list where any stranger can claim it."],
             ["02", "Add four words", "Whoever holds it adds exactly four words that count. Little words like the, a, to and of ride free, so grammar still works. AI can suggest; you choose what goes in."],
-            ["03", "Pass the buck", "Name the next person by email or release it to the wild. PayPal sends the next holder a dollar in sandbox test money. When the payout lands, your words join the story."],
+            ["03", "Pass the buck", "Name the next holder by email, or release it to the wild. PayPal sends them the dollar, in sandbox test money for now. When it lands, your words join the story."],
           ].map(([n, t, d]) => (
             <div key={n} className="card p-6">
               <div className="serial text-sm">{n}</div>
@@ -92,9 +99,10 @@ export function Home() {
             </div>
           ))}
         </div>
-        <div className="mt-5 grid gap-5 md:grid-cols-3">
+        <div className="eyebrow mt-10">AI plays the bill, never the author</div>
+        <div className="mt-3 grid gap-5 md:grid-cols-3">
           {[
-            ["The Diary", "Every bill has a personality and writes a first-person diary entry after each hop."],
+            ["The Diary", "Every bill has a personality and keeps a diary in its own voice, one entry per hop. It's never part of the story."],
             ["The Passport", "Each hop prints a stamp: city, date, and a little ink illustration."],
             ["The Nag", "Sit on a bill and it gets needy at 24 hours, dramatic at 3 days, and writes its own eulogy at 14."],
           ].map(([t, d]) => (
@@ -104,6 +112,13 @@ export function Home() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* ---------------------------------------------------------------- the long game */}
+      <section className="mx-auto max-w-3xl px-4 pb-16 text-center">
+        <p className="font-display text-[1.4rem] italic leading-snug text-ink-2 sm:text-3xl">
+          There's no page limit. One buck could pass through ten thousand hands: forty thousand words by strangers who never met, four at a time.
+        </p>
       </section>
 
       {/* ---------------------------------------------------------------- bills */}

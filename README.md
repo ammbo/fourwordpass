@@ -124,7 +124,7 @@ To set it up from scratch:
    PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... node scripts/paypal-webhook.mjs
    npx wrangler secret put PAYPAL_WEBHOOK_ID      # paste the id it printed
    ```
-3. Checkout needs a sandbox **personal** (buyer) account to pay the $2. Payouts come from your sandbox **business** account balance.
+3. Checkout shows one of PayPal's published sandbox test cards (Visa `4012 0000 7777 7777`) with copy buttons, so visitors can pay the $2 through "Debit or Credit Card" with no PayPal account. On a computer, a sandbox **personal** (buyer) account also works through the PayPal button. Phones get the card option only: an installed PayPal app takes over the sandbox login and can't finish the order. Payouts come from your sandbox **business** account balance.
 
 Optional: `npx wrangler secret put ANTHROPIC_API_KEY` for a noticeably better bill voice.
 

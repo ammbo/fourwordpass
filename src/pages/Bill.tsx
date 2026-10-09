@@ -28,6 +28,8 @@ export function BillPage() {
   const [isNew] = useState(() => new URLSearchParams(location.search).has("new"));
   const [active, setActive] = useState<Active>(null);
   const [forkAt, setForkAt] = useState<PublicHop | null>(null);
+  // Phones stack the inspector below the whole story, so a tapped line opens a sheet instead.
+  const [picked, setPicked] = useState<number | null>(null);
   const [claiming, setClaiming] = useState(false);
   const fresh = useFreshHop(bill);
 
@@ -56,6 +58,7 @@ export function BillPage() {
 
   const last = bill.hops[bill.hops.length - 1];
   const activeHop = active && "hop" in active ? bill.hops.find((h) => h.idx === active.hop) : null;
+  const pickedHop = picked == null ? null : bill.hops.find((h) => h.idx === picked);
   const activeKey = activeHop ? placeKey(activeHop) : active && "place" in active ? active.place : null;
   const ended = bill.status === "complete" || bill.status === "eulogized";
   const lastWords = bill.hops.slice(-2).map((h) => h.words).join(" ");
@@ -98,8 +101,11 @@ export function BillPage() {
             {bill.featured && <span className="chip !border-gold/40 !text-gold">★ Featured</span>}
             {bill.isSeed && <span className="chip !text-muted" title="This bill's early history was simulated for the demo.">Demo history</span>}
           </div>
-          <h1 className="p-name mt-3 font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">{bill.personality.name}</h1>
-          <p className="mt-2 font-display text-lg italic text-ink-2">“{bill.personality.tagline}”</p>
+          <div className="eyebrow mt-4 text-balance">A story by strangers, four words at a time</div>
+          <h1 className="p-name mt-1.5 font-display text-4xl font-semibold leading-[1.05] sm:text-5xl">{bill.personality.name}</h1>
+          <p className="mt-2 font-display text-lg italic text-ink-2">
+            “{bill.personality.tagline}” <span className="whitespace-nowrap font-sans text-xs not-italic text-muted">the bill's motto, by AI</span>
+          </p>
           {bill.theme && <p className="mt-2 text-sm text-muted">Prompt: {bill.theme}</p>}
 
           <dl className="mt-5 grid grid-cols-4 gap-2 text-center">
@@ -164,10 +170,10 @@ export function BillPage() {
           <div className="mb-4 flex items-end justify-between gap-4 border-b border-line pb-3">
             <div>
               <h2 className="font-display text-3xl font-semibold">The Story</h2>
-              <p className="text-sm text-muted">Pay it ForWord: {bill.hopCount} strangers, four words at a time. Hover any line to see who wrote it, and where.</p>
+              <p className="text-sm text-muted">Pay it ForWord: {bill.hopCount} strangers, four words at a time. Tap any line to see who wrote it, and where.</p>
             </div>
           </div>
-          <div className="e-content"><Story bill={bill} active={active} onActive={setActive} freshIdx={fresh} /></div>
+          <div className="e-content"><Story bill={bill} active={active} onActive={setActive} onPick={setPicked} freshIdx={fresh} /></div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
           <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -197,6 +203,12 @@ export function BillPage() {
 
       {/* ---------------------------------------------------------------- family tree */}
       {(bill.forks.length > 0 || bill.forkedFrom) && <FamilyTree bill={bill} />}
+
+      {pickedHop && (
+        <div className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 mx-auto max-w-xl lg:hidden *:mt-0 *:shadow-2xl">
+          <Inspector bill={bill} hop={pickedHop} placeKey={null} onFork={(h) => { setPicked(null); setForkAt(h); }} onClose={() => setPicked(null)} />
+        </div>
+      )}
 
       {forkAt && (
         <Modal title={`Fork ${bill.serial} at hop ${forkAt.idx}`} onClose={() => setForkAt(null)}>
@@ -229,7 +241,7 @@ export function BillPage() {
   );
 }
 
-function Inspector({ bill, hop, placeKey: pk, onFork }: { bill: PublicBill; hop: PublicHop | null | undefined; placeKey: string | null; onFork: (h: PublicHop) => void }) {
+function Inspector({ bill, hop, placeKey: pk, onFork, onClose }: { bill: PublicBill; hop: PublicHop | null | undefined; placeKey: string | null; onFork: (h: PublicHop) => void; onClose?: () => void }) {
   if (pk) {
     const at = bill.hops.filter((h) => `${h.lat},${h.lng}` === pk);
     return (
@@ -246,7 +258,10 @@ function Inspector({ bill, hop, placeKey: pk, onFork }: { bill: PublicBill; hop:
         <div className="font-mono text-xs uppercase tracking-widest text-muted">
           {hop.idx === 1 ? "Hop 1 · the foreword" : `Hop ${hop.idx}`}{hop.inherited ? " · inherited" : ""}
         </div>
-        <div className="font-mono text-xs text-muted">{longDate(hop.confirmedAt)}</div>
+        <div className="flex items-center gap-3">
+          <div className="font-mono text-xs text-muted">{longDate(hop.confirmedAt)}</div>
+          {onClose && <button type="button" className="-my-1 -mr-1 px-1 text-lg leading-none text-muted hover:text-ink" onClick={onClose} aria-label="Close">×</button>}
+        </div>
       </div>
       <div className="mt-1 font-display text-xl">“{hop.words}”</div>
       <div className="mt-1 text-sm text-muted">{hop.penName ? <><b className="text-ink">{hop.penName}</b> in {hop.place}</> : `A stranger in ${hop.place}`}</div>

@@ -54,9 +54,10 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
       ? "SELECT serial, personality, is_seed FROM bills WHERE status = 'wild' ORDER BY follower_count DESC, wild_since DESC LIMIT 60"
       : "SELECT serial, personality, is_seed FROM bills ORDER BY featured DESC, created_at DESC LIMIT 12").all<LinkBill>();
     content = path === "/"
-      ? `<p>Pass the buck. Write a story. Four words at a time.</p><p>A dollar travels from person to person through PayPal. Each holder adds four words to the story it carries, then passes it on. The bill keeps a diary.</p>
-         <p><a href="/release">Start a story</a> · <a href="/wild">Join a story</a></p>
-         <h2>How the buck moves</h2><ol><li>Write the foreword: release a buck and write its first four words.</li><li>Add four content words. Small connecting words ride free.</li><li>Pass the buck by email or release it to the wild.</li></ol>
+      ? `<p>Pass the buck. Write a story. Four words at a time.</p><p>A dollar travels from person to person through PayPal. Each holder adds exactly four words to the story it carries, then passes it on.</p>
+         <p><a href="/release">Start a story · $2</a> · <a href="/wild">Join a story · free</a></p>
+         <h2>How the buck moves</h2><ol><li>Write the foreword: release a buck and write its first four words.</li><li>Add four content words. Small connecting words ride free.</li><li>Pass the buck by email, or release it to the wild, a public list where any stranger can claim it.</li></ol>
+         <p>There's no page limit. One buck could pass through ten thousand hands: forty thousand words by strangers who never met, four at a time.</p>
          <h2>Stories to follow</h2>${billLinks(bills)}<h2>A few words before you go</h2>${FAQ.map(({ question, answer }) => `<h3>${escapeHtml(question)}</h3><p>${escapeHtml(answer)}</p>`).join("")}`
       : `<p>Read a story, claim a buck, and write what happens next. Holders play free.</p>${bills.length ? billLinks(bills) : `<p>The wild is quiet. <a href="/release">Release a buck</a> to start a story.</p>`}`;
   } else if (path === "/release") {

@@ -7,7 +7,9 @@ type PayPalButtons = {
   close(): Promise<void>;
 };
 type PayPalNamespace = {
+  FUNDING: { CARD: string };
   Buttons(opts: {
+    fundingSource?: string;
     style?: Record<string, unknown>;
     onClick?: (data: unknown, actions: { resolve(): void; reject(): void }) => void;
     createOrder: () => Promise<string>;
@@ -31,6 +33,22 @@ function loadSdk(clientId: string): Promise<PayPalNamespace> {
   });
   return sdk;
 }
+
+// On phones the PayPal app hijacks sandbox.paypal.com links and can't finish sandbox orders,
+// so mobile gets the inline card form only.
+const isMobile =
+  typeof navigator !== "undefined" &&
+  (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+
+// One of PayPal's published sandbox Visa numbers. Most visitors have no sandbox login, so everyone sees it.
+// PayPal's card form also requires a ZIP and a mobile number; fictional ones keep real details out of a test.
+const TEST_CARD = [
+  ["Card", "4012 0000 7777 7777", "4012000077777777"],
+  ["Expires", "12/30", "1230"],
+  ["CSC", "123", "123"],
+  ["ZIP", "95131", "95131"],
+  ["Mobile", "408 555 0100", "4085550100"],
+] as const;
 
 type Props = {
   config: AppConfig | null;
@@ -56,6 +74,7 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
       .then((paypal) => {
         if (cancelled || !el.current) return;
         buttons = paypal.Buttons({
+          ...(isMobile && { fundingSource: paypal.FUNDING.CARD }),
           style: { layout: "vertical", shape: "pill", color: "black", label: "pay", height: 48 },
           onClick: (_d, actions) => {
             const err = latest.current.validate();
@@ -107,8 +126,11 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
       </div>
       {config?.paypalMode === "sandbox" ? (
         <>
+          <TestCard />
           <div ref={el} className={busy ? "pointer-events-none opacity-50" : ""} />
-          <p className="mt-2 text-center text-xs text-muted">PayPal sandbox: use a sandbox buyer account. No real money moves.</p>
+          <p className="mt-2 text-center text-xs text-muted">
+            {isMobile ? "PayPal sandbox. No real money moves." : "Have a PayPal sandbox login? Use the PayPal button instead. No real money moves."}
+          </p>
         </>
       ) : (
         <>
@@ -119,6 +141,32 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
         </>
       )}
       {busy && config?.paypalMode === "sandbox" && <p className="mt-2 text-center text-sm font-medium">Printing your buck…</p>}
+    </div>
+  );
+}
+
+/** Placed above the buttons: PayPal's card form opens inline below them and would push this out of view. */
+function TestCard() {
+  const [copied, setCopied] = useState<string | null>(null);
+  return (
+    <div className="mb-3 rounded-xl border border-dashed border-line p-3 text-sm">
+      <div className="font-semibold">Pay with PayPal's sandbox test card</div>
+      <p className="mt-0.5 text-xs text-muted">Choose Debit or Credit Card and enter these, with any name and email.</p>
+      <dl className="mt-2 space-y-1">
+        {TEST_CARD.map(([label, shown, value]) => (
+          <div key={label} className="flex items-center gap-3">
+            <dt className="w-14 text-xs text-muted">{label}</dt>
+            <dd className="flex-1 font-mono">{shown}</dd>
+            <button
+              type="button"
+              className="text-xs font-semibold text-ink underline-offset-4 hover:underline"
+              onClick={() => navigator.clipboard?.writeText(value).then(() => setCopied(label), () => {})}
+            >
+              {copied === label ? "Copied" : "Copy"}
+            </button>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
