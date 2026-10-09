@@ -120,7 +120,7 @@ This section answers the monitoring question directly: **you cannot observe tran
 ### 6.3 Funding model
 
 - **MVP (sandbox):** test money. Orders captures a $2 sandbox mint/fork checkout; one sandbox business account funds each later test payout. Explicit mock mode simulates both APIs.
-- **Proposed production model (not implemented):** hold the dollar at mint, record intermediate claims and handoffs internally, and make one final payout when the story is complete. Per-hop live transfers are not economically viable at this amount. Decide the final recipient and what happens when a story expires in the wild; account for checkout/payout fees and update launch disclosures. Live checkout and new payouts remain gated until this is implemented. The earlier per-hop collection/relay proposal is superseded.
+- **Proposed production model (not implemented):** see "Paid Four Word" in Section 18. Passing is free; each bill carries one standing $1 cash-out offer paid from platform funds; only the creator can revive a cashed-out bill, for $2. Per-hop live transfers are not economically viable at this amount. Live checkout and new payouts remain gated until this is implemented. The earlier per-hop collection/relay proposal is superseded.
 - Note in README: production Payouts requires PayPal approval for the Payouts feature. Sandbox is unrestricted.
 
 ### 6.4 The PayPal transaction note
@@ -461,11 +461,53 @@ Layered, in order of importance:
 
 ### V2 (post-hackathon)
 
-- Production money: relay pool (Orders API), real $2 mint/fork checkout, Payouts approval
+- Production money: the "Paid Four Word" model below, real $2 mint/fork/revival checkout, Payouts approval
+- Pass by link: the holder shares a private hand-off link (text, chat, QR) instead of typing an email; the first person to open it claims the buck with their own email. Expires back to the sender or the wild.
 - Storybook print-on-demand export and storefront
 - Sponsored bills + brand dashboard; private chains (weddings, conferences)
 - Push notifications; richer courier score; chapter summaries for 1,000+ hop stories
 - Multi-currency; non-US payout handling
+
+#### Post-hackathon option: "Paid Four Word" (cash-out model)
+
+The hackathon build keeps a sandbox payout on every hop. It demos PayPal well, but per-hop payouts cannot scale. This option replaces them with one standing $1 offer per bill. It is an experiment: how far does a dollar get paid forward before someone keeps it?
+
+**Money**
+
+- Passing is free. Money moves only on mint, revival, and cash-out.
+- Mint and fork stay $2 (Orders API). The platform does not hold the dollar as a deposit: the mint is a product sale, and the $1 is a standing offer the platform pays from its own funds. No escrow, no stored value.
+- If nobody cashes out, the platform keeps the dollar. Disclose at checkout and in the terms: "The dollar is an offer to whoever holds the buck. If nobody takes it, it isn't refunded."
+- Fee check: a $2 checkout loses roughly $0.56 to processing; a cash-out costs $1 plus the payout fee. A revived-then-cashed-out bill is roughly break-even; an uncashed bill keeps roughly $1.40. Confirm against the live fee schedule before launch.
+
+**Cashing out**
+
+- On their turn, a holder either passes the buck on or cashes out the $1. Cashing out is their last move: they may add four parting words, which become the line before the ending.
+- Payout goes to the holder's email via Payouts; PayPal's own claim flow covers recipients without an account. The bill pauses as "Cashed out" when the holder chooses, not when PayPal confirms. A failed payout is reported to the holder for retry; the bill stays paused.
+- A bill claimed from the wild cannot be cashed out on that turn. Claimers can still game it by passing to a second address; accept that for now and detect abuse later (same-person passes, rapid claim-pass-cash patterns, per-person cash-out caps).
+- The cash-out holder is never shown publicly: no email, no pen name. Only the hop number and city ("Cashed out at hop 23, Austin").
+
+**After a cash-out: the creator has final say**
+
+- Only the creator can act. No rescues by followers or strangers.
+- **Revive:** pay $2 (Orders API) and the story continues from where it stopped. The creator passes it on or releases it to the wild. Revivals can repeat and are counted publicly ("revived twice").
+- **Finish:** write the finale. The story ends with "Cashed out" in its record.
+- **Do nothing:** after 7 days the bill writes its own ending (the existing eulogy flow).
+- The diary and story record the break honestly: "Cashed out at hop 23. Revived by the one who started me."
+
+**Statuses and voice**
+
+- An unbroken chain carries the "Paid Four Word" badge. A break shows "Cashed out", then "Revived" or ended.
+- Tone is wry, never shaming. Spending a dollar is what dollars do.
+
+**Stats this unlocks**
+
+- Average hops before a cash-out, the longest chain never cashed out, where dollars get spent, revival rate.
+
+**What it changes**
+
+- Per-hop payouts, the payout state machine, and payout webhooks in the hop sequence (Section 6.2) are replaced by free handoffs plus a single cash-out payout. Holders lose PayPal's "you've got $1" email on every hop, so our own email deliverability and pass-by-link matter more.
+- Data: a cash-out record per bill, a revival count, and a "cashed out, awaiting creator" state with its 7-day timeout.
+- Existing sandbox bills need a migration path.
 
 ---
 
