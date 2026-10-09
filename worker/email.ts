@@ -7,6 +7,9 @@ import { INFO_LINKS, SUPPORT_EMAIL } from "../shared/info";
 import { SHARE_IMAGE, SITE_NAME, SITE_URL } from "../shared/site";
 
 export type Mail = {
+  deliveryKey?: string;
+  subscriptionId?: string;
+  paymentMode?: "sandbox" | "mock" | "live";
   to: string;
   kind: string;
   billId?: string;
@@ -27,7 +30,7 @@ export type Mail = {
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function renderHtml(m: Mail): string {
+function renderHtml(m: Mail, notice: string): string {
   const p = m.paragraphs
     .map((t) => `<p style="margin:0 0 14px;font:16px/1.55 Georgia,'Times New Roman',serif;color:#1d2a22">${esc(t)}</p>`)
     .join("");
@@ -63,11 +66,11 @@ ${image}${m.serial ? `<div style="font:700 13px/1 'Courier New',monospace;letter
 ${p}${quote}${button}${secondary}
 ${m.footer ? `<p style="margin:20px 0 0;font:13px/1.5 Helvetica,Arial,sans-serif;color:#5d6f63">${esc(m.footer)}</p>` : ""}
 </div></td></tr></table>
-<div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}<br>Sandbox beta: test money, real app emails.<br>${INFO_LINKS.map(({ path, label }) => `<a href="${SITE_URL}${path}" style="color:#7a857d">${label}</a>`).join(" · ")}</div>
+<div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}<br>${esc(notice)}<br>${INFO_LINKS.map(({ path, label }) => `<a href="${SITE_URL}${path}" style="color:#7a857d">${label}</a>`).join(" · ")}</div>
 </td></tr></table></body></html>`;
 }
 
-function renderText(m: Mail): string {
+function renderText(m: Mail, notice: string): string {
   return [
     m.heading,
     "",
@@ -78,14 +81,16 @@ function renderText(m: Mail): string {
     m.footer ?? "",
     m.unsubscribeUrl ? `\nChange or stop these emails: ${m.unsubscribeUrl}` : "",
     "\n— Four Word Pass",
-    "Sandbox beta: test money, real app emails.",
+    notice,
     ...INFO_LINKS.map(({ path, label }) => `${label}: ${SITE_URL}${path}`),
   ].join("\n");
 }
 
-export async function sendMail(env: Env, m: Mail): Promise<boolean> {
+async function deliverMail(env: Env, m: Mail): Promise<boolean> {
   const id = newId();
-  const text = renderText(m);
+  const mode = m.paymentMode ?? env.PAYPAL_MODE;
+  const notice = mode === "live" ? "Live payments. Real app emails." : mode === "mock" ? "Simulated payments. Real app emails." : "Sandbox beta: test money, real app emails.";
+  const text = renderText(m, notice);
   const log = (status: string, extra: { messageId?: string; error?: string; body?: string } = {}) =>
     env.DB.prepare(
       "INSERT INTO emails (id, to_email, kind, subject, bill_id, status, message_id, body_text, error, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -103,7 +108,7 @@ export async function sendMail(env: Env, m: Mail): Promise<boolean> {
       from: { email: env.MAIL_FROM, name: SITE_NAME },
       to: m.to,
       subject: m.subject,
-      html: renderHtml(m),
+      html: renderHtml(m, notice),
       text,
       replyTo: SUPPORT_EMAIL,
       ...(m.unsubscribeUrl ? { headers: { "List-Unsubscribe": `<${m.unsubscribeUrl}>` } } : {}),
@@ -116,4 +121,50 @@ export async function sendMail(env: Env, m: Mail): Promise<boolean> {
     await log("failed", { error: `${err.code ?? ""} ${err.message ?? ""}`.trim() });
     return false;
   }
+}
+
+/** Persist before contacting the provider. A stable delivery key deduplicates lifecycle retries. */
+export async function queueMail(env: Env, m: Mail): Promise<string> {
+  const bytes = new TextEncoder().encode(m.deliveryKey ?? JSON.stringify(m));
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  const id = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, "0")).join("");
+  await env.DB.prepare("INSERT OR IGNORE INTO mail_outbox (id,payload,next_attempt_at,created_at) VALUES (?,?,?,?)")
+    .bind(id, JSON.stringify({...m, paymentMode: m.paymentMode ?? env.PAYPAL_MODE}), now(), now()).run();
+  return id;
+}
+
+export async function sendMail(env: Env, m: Mail): Promise<boolean> {
+  return sendQueuedMail(env, await queueMail(env, m));
+}
+
+async function sendQueuedMail(env: Env, id: string): Promise<boolean> {
+  const t = now();
+  const lease = await env.DB.prepare(`UPDATE mail_outbox SET lease_until = ?, attempts = attempts + 1
+    WHERE id = ? AND status = 'pending' AND lease_until < ? AND next_attempt_at <= ?`)
+    .bind(t + 120_000, id, t, t).run();
+  const row = await env.DB.prepare("SELECT payload,status,attempts FROM mail_outbox WHERE id = ?")
+    .bind(id).first<{payload: string; status: string; attempts: number}>();
+  if (!row) return false;
+  if (!lease.meta.changes) return row.status === "sent";
+  let sent = false;
+  try {
+    const mail = JSON.parse(row.payload) as Mail;
+    const subscription = mail.subscriptionId ? await env.DB.prepare("SELECT verified FROM follows WHERE id = ? AND verified = 1")
+      .bind(mail.subscriptionId).first() : true;
+    sent = subscription ? await deliverMail(env,mail) : true;
+  } finally {
+    await env.DB.prepare(`UPDATE mail_outbox SET status = ?, sent_at = ?, lease_until = 0, next_attempt_at = ? WHERE id = ?`)
+      .bind(sent ? "sent" : "pending", sent ? now() : null, now() + Math.min(6 * 3600_000, 30_000 * 2 ** Math.min(row.attempts, 10)), id).run();
+  }
+  return sent;
+}
+
+export async function retryMail(env: Env) {
+  const {results} = await env.DB.prepare("SELECT id FROM mail_outbox WHERE status = 'pending' AND lease_until < ? AND next_attempt_at <= ? ORDER BY next_attempt_at LIMIT 20")
+    .bind(now(), now()).all<{id: string}>();
+  for (const row of results) {
+    try { await sendQueuedMail(env, row.id); } catch (e) { console.error("mail retry failed", e); }
+  }
+  // Retain deduplication records, but erase private message bodies after delivery.
+  await env.DB.prepare("UPDATE mail_outbox SET payload = '{}' WHERE status = 'sent' AND sent_at < ? AND payload != '{}'").bind(now() - 7 * 86400_000).run();
 }

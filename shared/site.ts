@@ -1,10 +1,12 @@
+import type { PayPalMode } from "./types";
+import { paymentNotice } from "./payments";
 import { INFO_PAGES } from "./info.ts";
 
 /** Public brand and metadata. Never pass capability tokens or private bill fields here. */
 export const SITE_URL = "https://fourwordpass.com";
 export const SITE_NAME = "Four Word Pass";
 export const SHARE_IMAGE = `${SITE_URL}/og-image.jpg`;
-export const SHARE_IMAGE_ALT = "Four Word Pass. One dollar. Many strangers. One story. Add four words. Pass it on. Sandbox beta.";
+export const SHARE_IMAGE_ALT = "Four Word Pass. One dollar. Many strangers. One story. Add four words. Pass it on.";
 export const BETA_NOTICE = "Sandbox beta: checkout and payouts use PayPal test money. No real money changes hands.";
 
 export const FAQ = [
@@ -18,6 +20,14 @@ export const FAQ = [
   { question: "Why PayPal?", answer: "Because the dollar is how the story moves. Each pass is a PayPal payout to the next holder, so every hop has a PayPal receipt behind it, and every dollar in and out is public in the open books." },
   { question: "How does a story end?", answer: "When its creator says so: the person who started it writes the finale, up to twelve words. If a bill stops moving for 14 days, it writes its own eulogy instead. Don't like where a story went? Fork it from any earlier hop and take it somewhere else." },
 ] as const;
+
+export function faqForMode(mode?: PayPalMode | null): {question: string; answer: string}[] {
+  return FAQ.map(item => ({...item, answer: item.question === "Does it cost anything to play?"
+    ? `Joining a story is free. Starting or forking a story uses a $2 checkout. ${paymentNotice(mode)}`
+    : item.question === "Do I need an account or an app?"
+      ? `No Four Word Pass account or download is required. A private email link is your key to write. ${mode === "sandbox" ? "Use the test card shown at checkout." : mode === "mock" ? "Demo checkout is simulated; no card is needed." : paymentNotice(mode)}`
+      : item.answer}));
+}
 
 export type PageMeta = {
   path: string;
@@ -35,25 +45,25 @@ export const PAGES: Record<string, PageMeta> = {
   "/": {
     path: "/",
     title: "Four Word Pass · A story by strangers, four words at a time",
-    description: "One dollar. Many strangers. One story. Add four words, pass the buck, and follow its journey. Try the collaborative storytelling game in PayPal sandbox beta.",
+    description: "One dollar. Many strangers. One story. Add four words, pass the buck, and follow its journey. Try the collaborative storytelling game.",
     heading: "Passage of the Buck.",
   },
   "/release": {
     path: "/release",
     title: "Start a story · Release a buck · Four Word Pass",
-    description: "Write the first four words. Give your buck a prompt, send it to a friend or the wild, and let strangers write what comes next. PayPal sandbox beta.",
+    description: "Write the first four words. Give your buck a prompt, send it to a friend or the wild, and let strangers write what comes next.",
     heading: "Write the foreword.",
   },
   "/wild": {
     path: "/wild",
     title: "Find a story to join · The wild · Four Word Pass",
-    description: "Browse bucks waiting for their next writer. Read a story, claim a buck, add four words, and pass it on. Holders play free. PayPal sandbox beta.",
+    description: "Browse bucks waiting for their next writer. Read a story, claim a buck, add four words, and pass it on. Holders play free.",
     heading: "Bucks nobody named.",
   },
   "/books": {
     path: "/books",
     title: "Open books · Every dollar in and out · Four Word Pass",
-    description: "A live public ledger of every PayPal checkout and payout behind Four Word Pass, with statuses straight from PayPal. Emails private, references masked. Sandbox beta.",
+    description: "A live public ledger of every PayPal checkout and payout behind Four Word Pass, with statuses straight from PayPal. Emails private, references masked.",
     heading: "Every dollar, in and out.",
   },
   ...Object.fromEntries(Object.values(INFO_PAGES).map(({ path, title, heading, description }) => [path, { path, title, heading, description }])),
@@ -80,8 +90,8 @@ export type StoryMeta = {
 export function billMeta(bill: StoryMeta): PageMeta {
   const path = `/b/${bill.serial.toUpperCase()}`;
   const description = bill.teaser
-    ? `“${bill.teaser.slice(0, 130)}” Follow ${bill.serial}, a story by strangers, four words at a time. Sandbox beta.${bill.isSeed ? " Demo history." : ""}`
-    : "A buck waiting for its first chapter. Follow the journey and its story, four words at a time. PayPal sandbox beta.";
+    ? `“${bill.teaser.slice(0, 130)}” Follow ${bill.serial}, a story by strangers, four words at a time.${bill.isSeed ? " Demo history." : ""}`
+    : "A buck waiting for its first chapter. Follow the journey and its story, four words at a time.";
   return {
     path, title: `${bill.name} · ${bill.serial} · Four Word Pass`, description,
     heading: bill.name, type: "article", noindex: bill.isSeed || bill.hopCount === 0,
@@ -100,7 +110,7 @@ export function billMeta(bill: StoryMeta): PageMeta {
 export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 export const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 
-export function structuredData(meta: PageMeta) {
+export function structuredData(meta: PageMeta, mode: PayPalMode | null = "sandbox") {
   const url = `${SITE_URL}${meta.path}`;
   const graph: Record<string, unknown>[] = [
     { "@type": "WebSite", "@id": `${SITE_URL}/#website`, url: `${SITE_URL}/`, name: SITE_NAME, inLanguage: "en", description: PAGES["/"].description },
@@ -109,7 +119,7 @@ export function structuredData(meta: PageMeta) {
   ];
   if (meta.path === "/") {
     graph.push({ "@type": "WebApplication", "@id": `${SITE_URL}/#app`, name: SITE_NAME, url: `${SITE_URL}/`, applicationCategory: "GameApplication", operatingSystem: "Any", browserRequirements: "Requires JavaScript for participation", description: PAGES["/"].description, image: SHARE_IMAGE });
-    graph.push({ "@type": "FAQPage", "@id": `${SITE_URL}/#faq`, mainEntity: FAQ.map(({ question, answer }) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })) });
+    graph.push({ "@type": "FAQPage", "@id": `${SITE_URL}/#faq`, mainEntity: faqForMode(mode).map(({ question, answer }) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })) });
   }
   if (meta.path !== "/" && !meta.noindex) graph.push({ "@type": "BreadcrumbList", itemListElement: [
     { "@type": "ListItem", position: 1, name: SITE_NAME, item: `${SITE_URL}/` },
@@ -119,7 +129,7 @@ export function structuredData(meta: PageMeta) {
 }
 
 /** Shared by Vite's HTML template, the Worker, and client-side navigation. */
-export function renderHead(meta: PageMeta) {
+export function renderHead(meta: PageMeta, mode: PayPalMode | null = "sandbox") {
   const tag = (key: string, value: string, property = false) => `<meta data-seo ${property ? "property" : "name"}="${key}" content="${escapeHtml(value)}">`;
   return [
     `<title data-seo>${escapeHtml(meta.title)}</title>`,
@@ -134,6 +144,6 @@ export function renderHead(meta: PageMeta) {
     tag("twitter:card", "summary_large_image"), tag("twitter:title", meta.title), tag("twitter:description", meta.description), tag("twitter:image", SHARE_IMAGE), tag("twitter:image:alt", SHARE_IMAGE_ALT),
     ...(meta.published ? [tag("article:published_time", meta.published, true)] : []),
     ...(meta.modified ? [tag("article:modified_time", meta.modified, true)] : []),
-    `<script data-seo type="application/ld+json">${safeJson(structuredData(meta))}</script>`,
+    `<script data-seo type="application/ld+json">${safeJson(structuredData(meta, mode))}</script>`,
   ].join("\n");
 }

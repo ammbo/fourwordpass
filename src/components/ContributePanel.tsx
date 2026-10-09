@@ -1,3 +1,4 @@
+import { payoutDescription } from "../../shared/payments";
 import { useEffect, useRef, useState } from "react";
 import type { HolderView, PassFailure, PublicBill } from "../../shared/types";
 import { checkFourWords, isEmail, maskEmail } from "../../shared/words";
@@ -7,7 +8,7 @@ import { ShareButton } from "./ShareButton";
 import { WordInput } from "./WordInput";
 import { ParticipationTerms } from "./ParticipationTerms";
 
-type Props = { bill: PublicBill; token: string; onDone: () => void };
+type Props = { bill: PublicBill; token: string; onDone: () => void; onObsolete: () => void };
 
 const placeText = (p: { city: string | null; region: string | null; country: string | null }) =>
   p.city ? `${p.city}${p.region && p.country === "US" ? `, ${p.region}` : ""}` : p.country ?? null;
@@ -18,7 +19,7 @@ const failureText = (f: PassFailure) =>
     : `PayPal couldn't deliver to ${f.recipient}. Pick someone else, or release it into the wild.`;
 
 /** Email link → read → four words → pass. The whole loop, built to take under a minute on a phone. */
-export function ContributePanel({ bill, token, onDone }: Props) {
+export function ContributePanel({ bill, token, onDone, onObsolete }: Props) {
   const [view, setView] = useState<HolderView | null>(null);
   const [sentTo, setSentTo] = useState<"wild" | "someone" | null>(null);
   const [landed, setLanded] = useState(false);
@@ -27,6 +28,7 @@ export function ContributePanel({ bill, token, onDone }: Props) {
   const [wantsDecline] = useState(() => new URLSearchParams(location.search).has("decline"));
   const prevState = useRef<string | null>(null);
   const transitWords = useRef("");
+  const holdingTurn = useRef<number | null>(null);
 
   useEffect(() => {
     const url = new URL(location.href);
@@ -42,6 +44,11 @@ export function ContributePanel({ bill, token, onDone }: Props) {
       try {
         const v = await api.holder(bill.serial, token);
         if (!alive) return;
+        if (v.state === "holding" && v.holderSince !== holdingTurn.current) {
+          holdingTurn.current = v.holderSince;
+          setLanded(false); setSentTo(null); setDeclined(null);
+        }
+        if ((v.state === "moved_on" || v.state === "invalid") && bill.status === "wild") onObsolete();
         if ((prevState.current === "in_transit" || sentTo === "someone") && v.state === "moved_on") setLanded(true);
         if (v.state === "in_transit") transitWords.current = v.words;
         prevState.current = v.state;
@@ -144,7 +151,7 @@ export function ContributePanel({ bill, token, onDone }: Props) {
           // Show the in-flight state immediately; polling takes over from here.
           prevState.current = "in_transit";
           transitWords.current = words;
-          setView({ state: "in_transit", recipient: maskEmail(recipient), paypalStatus: "PENDING", mode: "sandbox", words });
+          setView({ state: "in_transit", recipient: maskEmail(recipient), paypalStatus: "PENDING", mode: bill.paymentMode, words });
         }
         onDone();
       };
@@ -206,7 +213,7 @@ export function RepassDesk({ bill, auth, returnedBy, lastFailure, onSent }: {
         {busy ? "Passing…" : toWild ? "Release the buck →" : "Pass the buck →"}
       </button>
       <p className="mt-2 text-center text-xs text-muted">
-        {toWild ? "The sandbox buck waits until someone claims it." : "We send a $1 PayPal sandbox payout. Only invite a willing recipient."}
+        {toWild ? "The buck waits until someone claims it." : `${payoutDescription(bill.paymentMode)} Only invite a willing recipient.`}
       </p>
     </PanelShell>
   );
@@ -360,7 +367,7 @@ function WritingDesk({ bill, token, view, wantsDecline, onSent, onDeclined }: {
         {busy ? "Passing…" : toWild ? "Release the buck →" : "Pass the buck →"}
       </button>
       <p className="mt-2 text-center text-xs text-muted">
-        {toWild ? "The sandbox buck waits until someone claims it." : "We send a $1 PayPal sandbox payout. Your words land when it does. Only invite a willing recipient."}
+        {toWild ? "The buck waits until someone claims it." : `${payoutDescription(bill.paymentMode)} Your words land when it does. Only invite a willing recipient.`}
       </p>
 
       <div ref={declineBox} className="mt-5 border-t border-line pt-4 text-center">

@@ -1,3 +1,5 @@
+import { paymentNotice } from "../../shared/payments";
+import { usePaymentMode } from "../paymentMode";
 // Open Books: every PayPal movement the platform has made, as a live ledger (AG Grid)
 // with charts (AG Charts) that follow whatever the ledger is filtered to.
 // Loaded lazily so the grid and chart libraries never weigh down the rest of the app.
@@ -41,7 +43,7 @@ import {
 import type { BooksRow, OpenBooks } from "../../shared/types";
 import { api } from "../api";
 import { nf } from "../lib";
-import { BETA_NOTICE } from "../../shared/site";
+
 
 GridModules.registerModules([
   ClientSideRowModelModule, ClientSideRowModelApiModule, LocaleModule, PaginationModule, QuickFilterModule, TextFilterModule, NumberFilterModule, DateFilterModule,
@@ -157,6 +159,7 @@ const MODEL_LABEL = (m: string) =>
 // ---------------------------------------------------------------- page
 
 export function Books() {
+  const mode = usePaymentMode();
   const [books, setBooks] = useState<OpenBooks | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState<BooksRow[] | null>(null);
@@ -242,7 +245,7 @@ export function Books() {
         Four Word Pass takes every checkout and sends every payout itself, so it can show you all of them. Statuses come straight from PayPal and update live.
         Emails stay private, and PayPal references are masked.
       </p>
-      <p className="mt-2 max-w-3xl text-sm text-muted">{BETA_NOTICE} Demo histories aren't here: their payments were simulated.</p>
+      <p className="mt-2 max-w-3xl text-sm text-muted">{paymentNotice(mode)} Demo histories aren't here: their payments were simulated.</p>
 
       {error && !books && <p className="card mt-8 p-6">{error}</p>}
 
@@ -351,8 +354,8 @@ export function Books() {
       <section className="mt-12 grid gap-4 md:grid-cols-3">
         {[
           ["UNCLAIMED means delivered", "PayPal holds the dollar for someone who doesn't have a PayPal account yet. In the sandbox that's almost everyone, so it counts as landed."],
-          ["Webhook or polling", "We ask PayPal right after every payout and once a minute after that. PayPal also sends a signed webhook, which we verify before trusting. Whichever answers first settles the hop."],
-          ["Who pays for hops", "Each release brings in $2: $1 for the first payout and $1 to run the site. In the sandbox the platform covers later hops. In production, each passer would pay $1 in through checkout."],
+          ["Webhook or polling", "We ask PayPal right after every payout, then keep checking with increasing delays. Unclaimed payouts are checked periodically until their final outcome. PayPal also sends a signed webhook, which we verify before trusting. Whichever answers first settles the hop."],
+          ["Who pays for hops", `${mode === "mock" ? "Demo checkouts and payouts are simulated." : "Each sandbox release brings in $2 in test money; the platform funds later test payouts."} Live payments are paused while a model with internal handoffs and a single final payout is being defined.`],
         ].map(([t, d]) => (
           <div key={t} className="rounded-2xl border border-dashed border-line p-5">
             <div className="font-display text-lg font-semibold">{t}</div>

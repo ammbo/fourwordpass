@@ -59,6 +59,8 @@ export type BillSummary = {
 };
 
 export type PublicBill = {
+  paymentMode: PayPalMode;
+  history: { olderBefore: number | null; newerAfter: number | null };
   serial: string;
   status: BillStatus;
   theme: string | null;

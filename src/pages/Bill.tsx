@@ -1,3 +1,5 @@
+import { payoutDescription, paymentNotice } from "../../shared/payments";
+import { usePaymentMode } from "../paymentMode";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import type { PublicBill, PublicHop } from "../../shared/types";
@@ -22,7 +24,7 @@ import { ParticipationTerms } from "../components/ParticipationTerms";
 export function BillPage() {
   const { serial: raw } = useParams<{ serial: string }>();
   const serial = raw.toUpperCase();
-  const { bill, error, refresh } = useLiveBill(serial);
+  const { bill, error, errorStatus, refresh, changePage, loadingPage } = useLiveBill(serial);
   const [holderToken, setHolderToken] = useUrlToken("t", serial, "session");
   const [creatorToken] = useUrlToken("c", serial, "local");
   const [isNew] = useState(() => new URLSearchParams(location.search).has("new"));
@@ -49,8 +51,9 @@ export function BillPage() {
     return (
       <div className="mx-auto max-w-xl px-4 py-24 text-center">
         <div className="serial text-lg">{serial}</div>
-        <h1 className="mt-2 font-display text-4xl font-semibold">No bill by that serial.</h1>
-        <p className="mt-3 text-muted">Check the number on the note, or go find one in the wild.</p>
+        <h1 className="mt-2 font-display text-4xl font-semibold">{errorStatus === 404 ? "No bill by that serial." : "Couldn’t load this story."}</h1>
+        <p className="mt-3 text-muted">{errorStatus === 404 ? "Check the number on the note, or go find one in the wild." : error}</p>
+        {errorStatus !== 404 && <button className="btn btn-primary mt-5" onClick={refresh}>Try again</button>}
         <Link href="/wild" className="btn btn-primary mt-6">Browse the wild</Link>
       </div>
     );
@@ -68,7 +71,7 @@ export function BillPage() {
       <a className="u-url sr-only" href={`${SITE_URL}/b/${bill.serial}`}>Story permalink</a>
       {holderToken && !ended && (
         <div className="mb-8">
-          <ContributePanel bill={bill} token={holderToken} onDone={refresh} />
+          <ContributePanel bill={bill} token={holderToken} onDone={refresh} onObsolete={() => setHolderToken(null)} />
         </div>
       )}
 
@@ -76,7 +79,7 @@ export function BillPage() {
         <div className="animate-rise mb-6 rounded-2xl border border-ink bg-ink p-5 text-paper">
           <div className="font-display text-2xl font-semibold">It's alive. Meet {bill.personality.name}.</div>
           <p className="mt-1 text-paper/80">
-            {bill.status === "wild" ? "It's loose in the wild, waiting to be claimed." : "It's on its way to its first holder."} We emailed you your creator key: it's how you'll write the ending.
+            {bill.status === "wild" ? "It's loose in the wild, waiting to be claimed." : "It's on its way to its first holder."} Your creator-key email is queued: it's how you'll write the ending.
           </p>
           <div className="mt-4 max-w-xs"><ShareButton serial={bill.serial} dark /></div>
         </div>
@@ -173,12 +176,24 @@ export function BillPage() {
               <p className="text-sm text-muted">Pay it ForWord: {bill.hopCount} strangers, four words at a time. Tap any line to see who wrote it, and where.</p>
             </div>
           </div>
+          <nav aria-label="Story pages" className="mb-5 flex flex-wrap items-center gap-2 text-sm">
+            {bill.history.olderBefore !== null && <>
+              <button className="btn btn-ghost" disabled={loadingPage} onClick={() => {setActive(null); setPicked(null); changePage({after: 0});}}>Beginning</button>
+              <button className="btn btn-ghost" disabled={loadingPage} onClick={() => {setActive(null); setPicked(null); changePage({before: bill.history.olderBefore!});}}>Earlier hops</button>
+            </>}
+            <span aria-live="polite">{loadingPage ? "Loading…" : bill.hops.length ? `Hops ${bill.hops[0].idx.toLocaleString()}–${bill.hops.at(-1)!.idx.toLocaleString()}` : "No hops yet"}</span>
+            {bill.history.newerAfter !== null && <>
+              <button className="btn btn-ghost" disabled={loadingPage} onClick={() => {setActive(null); setPicked(null); changePage({after: bill.history.newerAfter!});}}>Later hops</button>
+              <button className="btn btn-ghost" disabled={loadingPage} onClick={() => {setActive(null); setPicked(null); changePage({});}}>Latest</button>
+            </>}
+          </nav>
+          {error && <p role="alert" className="mb-3 text-serial">{error} <button className="underline" onClick={refresh}>Try again</button></p>}
           <div className="e-content"><Story bill={bill} active={active} onActive={setActive} onPick={setPicked} freshIdx={fresh} /></div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <h3 className="font-display text-xl font-semibold">The Passage</h3>
-            <span className="text-xs text-muted">Every pin is a pair of hands</span>
+            <span className="text-xs text-muted">Pins for this story page</span>
           </div>
           <TrailMap hops={bill.hops} activeKey={activeKey} onHoverKey={(k) => setActive(k ? { place: k } : null)} className="h-72 sm:h-80" />
           <Inspector bill={bill} hop={activeHop ?? (active ? null : last)} placeKey={active && "place" in active ? active.place : null} onFork={setForkAt} />
@@ -196,7 +211,7 @@ export function BillPage() {
         </div>
         <div>
           <h2 className="mb-1 font-display text-3xl font-semibold">The Passport</h2>
-          <p className="mb-4 text-sm text-muted">One stamp per hop. Illustrations are inked by AI from each hop's place and words.</p>
+          <p className="mb-4 text-sm text-muted">Stamps for this story page. Illustrations are inked by AI from each hop's place and words.</p>
           <Passport serial={bill.serial} hops={bill.hops} active={active} onActive={setActive} />
         </div>
       </section>
@@ -319,6 +334,7 @@ function FamilyTree({ bill }: { bill: PublicBill }) {
 }
 
 function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: () => void; onClaimed: (token: string) => void }) {
+  const mode = usePaymentMode();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -339,12 +355,12 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
   return (
     <Modal title={`Claim ${serial}`} onClose={onClose}>
       <form onSubmit={submit}>
-        <p className="text-muted">We'll send a $1 sandbox test payout to your email. No real money changes hands. When the handoff lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
+        <p className="text-muted">{payoutDescription(mode)} {paymentNotice(mode)} When the handoff lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
         <input className="field mt-4" type="email" inputMode="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your PayPal email" />
         <ParticipationTerms checked={accepted} onChange={setAccepted} />
         {error && <div className="mt-3 text-sm font-medium text-serial">{error}</div>}
-        <button className="btn btn-primary mt-4 w-full !py-3.5" disabled={busy}>{busy ? "Claiming…" : "Claim it"}</button>
-        <p className="mt-2 text-center text-xs text-muted">Look for the email from Four Word Pass. PayPal sandbox notifications do not reach ordinary inboxes.</p>
+        <button className="btn btn-primary mt-4 w-full !py-3.5" disabled={busy || mode === "live" || !mode}>{busy ? "Claiming…" : "Claim it"}</button>
+        <p className="mt-2 text-center text-xs text-muted">Look for the email from Four Word Pass.{mode === "sandbox" && " PayPal sandbox notifications do not reach ordinary inboxes."}</p>
       </form>
     </Modal>
   );

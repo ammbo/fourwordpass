@@ -1,8 +1,11 @@
+import { paymentNotice } from "../../shared/payments";
+import { usePaymentMode } from "../paymentMode";
 import { useLocation } from "wouter";
 import { INFO_PAGES, POLICY_DATE } from "../../shared/info";
 
 export function Info() {
   const [path] = useLocation();
+  const mode = usePaymentMode();
   const page = INFO_PAGES[path];
   return (
     <article className="mx-auto max-w-3xl px-4 pb-24 pt-10 sm:pt-16">
@@ -10,6 +13,7 @@ export function Info() {
         <div className="eyebrow">{page.eyebrow}</div>
         <h1 className="mt-3 font-display text-4xl font-semibold leading-tight sm:text-5xl">{page.heading}</h1>
         <p className="mt-4 text-sm text-muted">Effective {POLICY_DATE}</p>
+        <p className="mt-4 rounded-xl border border-line p-3 text-sm">{paymentNotice(mode)} {mode !== "sandbox" && "The guide below describes the sandbox beta; live payments remain paused."}</p>
         <p className="mt-5 text-lg leading-relaxed text-ink-2">{page.intro}</p>
       </header>
       <nav className="mt-8 rounded-2xl border border-line bg-paper-3 p-5" aria-label="On this page">

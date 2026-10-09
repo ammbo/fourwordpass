@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment } from "react";
 import type { PublicBill, PublicHop } from "../../shared/types";
 
 export type Active = { hop: number } | { place: string } | null;
@@ -12,7 +12,6 @@ export function isActive(active: Active, h: PublicHop) {
 }
 
 const PARAGRAPH = 12;
-const WINDOW = 400;
 
 type Props = {
   bill: PublicBill;
@@ -24,10 +23,9 @@ type Props = {
 };
 
 export function Story({ bill, active, onActive, onPick, freshIdx }: Props) {
-  const [showAll, setShowAll] = useState(false);
   const hops = bill.hops;
-  const hidden = !showAll && hops.length > WINDOW ? hops.length - WINDOW : 0;
-  const visible = hidden ? hops.slice(hidden) : hops;
+  const visible = hops;
+  const latest = bill.history.newerAfter === null;
   const lastInherited = bill.forkedFrom ? bill.forkedFrom.atHop : null;
 
   if (!hops.length) {
@@ -46,16 +44,14 @@ export function Story({ bill, active, onActive, onPick, freshIdx }: Props) {
 
   return (
     <div className="story-prose" onMouseLeave={() => onActive(null)}>
-      {hidden > 0 && (
-        <button type="button" className="btn btn-ghost mb-5 text-sm" onClick={() => setShowAll(true)}>
-          Read from the beginning ({hidden.toLocaleString()} earlier hops)
-        </button>
-      )}
       {paragraphs.map((para, pi) => (
-        <p key={pi} className={`mb-4 ${pi === 0 && !hidden ? "dropcap" : ""}`}>
+        <p key={pi} className={`mb-4 ${pi === 0 && hops[0].idx === 1 ? "dropcap" : ""}`}>
           {para.map((h) => (
             <Fragment key={h.idx}>
               <span
+                role="button" tabIndex={0}
+                onFocus={() => onActive({hop: h.idx})}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") {e.preventDefault(); onActive({hop: h.idx}); onPick?.(h.idx);} }}
                 className="hop"
                 data-active={isActive(active, h)}
                 data-dim={active != null && !isActive(active, h)}
@@ -76,17 +72,17 @@ export function Story({ bill, active, onActive, onPick, freshIdx }: Props) {
               )}
             </Fragment>
           ))}
-          {pi === paragraphs.length - 1 && bill.finale?.by === "creator" && (
+          {pi === paragraphs.length - 1 && latest && bill.finale?.by === "creator" && (
             <span className="font-semibold text-ink"> {bill.finale.text}</span>
           )}
         </p>
       ))}
 
-      {bill.finale?.by === "creator" && (
+      {latest && bill.finale?.by === "creator" && (
         <p className="mt-2 font-mono text-xs uppercase tracking-widest text-muted">— The end, written by the one who started it.</p>
       )}
 
-      {bill.finale?.by === "bill" && (
+      {latest && bill.finale?.by === "bill" && (
         <div className="mt-4 rounded-xl border border-dashed border-serial/50 bg-serial/5 px-4 py-3">
           <div className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-serial">
             The buck wrote its own ending · its creator never came back

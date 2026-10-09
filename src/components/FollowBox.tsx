@@ -29,7 +29,7 @@ export function FollowBox({ serial, compact, dark }: { serial: string; compact?:
   if (state === "done")
     return (
       <div className={`rounded-xl border p-3.5 text-sm ${dark ? "border-paper/25" : "border-line bg-paper-3"}`}>
-        <b>You're following {serial}.</b> <span className={muted}>{pref === "every_hop" ? "Every hop lands in your inbox." : "You'll hear when it ends."}</span>
+        <b>Check your inbox.</b> <span className={muted}>Confirm your email preference to follow {serial}. If you previously opted out, use your original preferences link.</span>
       </div>
     );
 

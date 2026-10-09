@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { sendMail } from "../worker/email";
+import { DB } from "./helpers/db";
+import { sendMail, retryMail } from "../worker/email";
 import { INFO_LINKS, SUPPORT_EMAIL } from "../shared/info";
 
 it("keeps service mail within the provider's header contract and includes the public policies", async () => {
@@ -9,11 +10,8 @@ it("keeps service mail within the provider's header contract and includes the pu
     if (Object.keys(message.headers ?? {}).some((key) => reserved.has(key.toLowerCase()))) throw new Error("E_HEADER_USE_API_FIELD");
     return { messageId: "test-message" };
   });
-  const bind = vi.fn(() => ({ run: async () => ({ success: true }) }));
-  const env = {
-    EMAIL_MODE: "send", MAIL_FROM: "buck@fourwordpass.com",
-    EMAIL: { send }, DB: { prepare: () => ({ bind }) },
-  } as unknown as Env;
+  const db = new DB();
+  const env = {PAYPAL_MODE: "sandbox", EMAIL_MODE: "send", MAIL_FROM: "buck@fourwordpass.com", EMAIL: {send}, DB: db} as unknown as Env;
   const unsubscribeUrl = "https://fourwordpass.com/f/test-settings";
   expect(await sendMail(env, {
     to: "reader@example.com", kind: "follow", serial: "FWP-0001",
@@ -29,15 +27,12 @@ it("keeps service mail within the provider's header contract and includes the pu
     expect(message.text).toContain(`https://fourwordpass.com${path}`);
   }
   expect(message.text).toContain("Sandbox beta: test money, real app emails.");
-  expect(bind.mock.calls[0][7]).toBeNull(); // Production delivery logs omit the private message body.
+  expect(db.sqlite.prepare("SELECT body_text FROM emails").get()?.body_text).toBeNull(); // Production delivery logs omit the private message body.
 });
 
 it("renders a quieter second choice under the button", async () => {
   const send = vi.fn(async (_m: { html: string; text: string }) => ({ messageId: "m" }));
-  const env = {
-    EMAIL_MODE: "send", MAIL_FROM: "buck@fourwordpass.com",
-    EMAIL: { send }, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) },
-  } as unknown as Env;
+  const env = {PAYPAL_MODE: "sandbox", EMAIL_MODE: "send", MAIL_FROM: "buck@fourwordpass.com", EMAIL: {send}, DB: new DB()} as unknown as Env;
   await sendMail(env, {
     to: "holder@example.com", kind: "holder", serial: "FWP-0001", subject: "Someone passed you a story", heading: "You've been passed the buck.",
     paragraphs: ["Add four words."],
@@ -48,4 +43,19 @@ it("renders a quieter second choice under the button", async () => {
   expect(message.html).toContain('href="https://fourwordpass.com/b/FWP-0001?t=abc&amp;decline=1"');
   expect(message.html).toContain("Not for you? Send me back");
   expect(message.text).toContain("Not for you? Send me back: https://fourwordpass.com/b/FWP-0001?t=abc&decline=1");
+});
+
+it("durably retries provider failure and deduplicates successful mail", async () => {
+  const db = new DB();
+  const send = vi.fn().mockRejectedValueOnce(new Error("Provider unavailable")).mockResolvedValue({messageId: "retry"});
+  const env = {PAYPAL_MODE: "mock", EMAIL_MODE: "send", MAIL_FROM: "buck@example.com", EMAIL: {send}, DB: db} as unknown as Env;
+  const mail = {deliveryKey: "unique-holder", to: "reader@example.com", kind: "holder", subject: "Your link", heading: "Hello", paragraphs: ["A story."]};
+  expect(await sendMail(env, mail)).toBe(false);
+  expect(db.sqlite.prepare("SELECT status FROM mail_outbox").get()?.status).toBe("pending");
+  db.sqlite.exec("UPDATE mail_outbox SET next_attempt_at=0");
+  await retryMail(env);
+  expect(db.sqlite.prepare("SELECT status FROM mail_outbox").get()?.status).toBe("sent");
+  expect(await sendMail(env, mail)).toBe(true);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(send.mock.calls[1][0].text).toContain("Simulated payments");
 });

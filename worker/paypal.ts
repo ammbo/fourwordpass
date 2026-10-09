@@ -9,6 +9,7 @@
 
 import { HOP_AMOUNT, MINT_PRICE } from "../shared/brand";
 import type { PayPalMode } from "../shared/types";
+import { LIVE_PAYMENT_NOTICE } from "../shared/payments";
 
 const API_BASE = { live: "https://api-m.paypal.com", sandbox: "https://api-m.sandbox.paypal.com" };
 
@@ -29,16 +30,17 @@ export const FAILED = new Set(["FAILED", "BLOCKED", "DENIED", "RETURNED", "REFUN
 
 export function paypalMode(env: Env): PayPalMode {
   if (env.PAYPAL_MODE === "mock") return "mock";
-  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_CLIENT_SECRET) return "mock";
-  return env.PAYPAL_MODE === "live" ? "live" : "sandbox";
+  if (env.PAYPAL_MODE !== "live" && env.PAYPAL_MODE !== "sandbox") throw new Error("PAYPAL_MODE must be mock, sandbox, or live.");
+  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_CLIENT_SECRET) throw new Error("PayPal credentials are missing. Checkout is unavailable.");
+  return env.PAYPAL_MODE;
 }
 
 const apiBase = (env: Env) => API_BASE[paypalMode(env) === "live" ? "live" : "sandbox"];
 
-let cachedToken: { value: string; expires: number; clientId: string } | null = null;
+let cachedToken: { value: string; expires: number; clientId: string; base: string } | null = null;
 
 async function accessToken(env: Env): Promise<string> {
-  if (cachedToken && cachedToken.clientId === env.PAYPAL_CLIENT_ID && cachedToken.expires > Date.now()) {
+  if (cachedToken && cachedToken.clientId === env.PAYPAL_CLIENT_ID && cachedToken.base === apiBase(env) && cachedToken.expires > Date.now()) {
     return cachedToken.value;
   }
   const res = await fetch(`${apiBase(env)}/v1/oauth2/token`, {
@@ -48,10 +50,11 @@ async function accessToken(env: Env): Promise<string> {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: "grant_type=client_credentials",
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`PayPal auth failed (${res.status})`);
   const data = (await res.json()) as { access_token: string; expires_in: number };
-  cachedToken = { value: data.access_token, expires: Date.now() + (data.expires_in - 120) * 1000, clientId: env.PAYPAL_CLIENT_ID };
+  cachedToken = { value: data.access_token, expires: Date.now() + (data.expires_in - 120) * 1000, clientId: env.PAYPAL_CLIENT_ID, base: apiBase(env) };
   return data.access_token;
 }
 
@@ -65,9 +68,11 @@ async function api<T>(env: Env, path: string, init: { method?: string; body?: un
     method: init.method ?? "GET",
     headers,
     body: init.rawBody ?? (init.body === undefined ? undefined : JSON.stringify(init.body)),
+    signal: AbortSignal.timeout(15_000),
   });
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 401) cachedToken = null;
     let message = text.slice(0, 300);
     try {
       const j = JSON.parse(text) as { message?: string; name?: string; details?: { issue?: string; description?: string }[] };
@@ -136,6 +141,7 @@ export async function createPayout(
 
 export async function getPayout(env: Env, batchId: string): Promise<PayoutState> {
   if (batchId.startsWith("MOCK")) {
+    if (paypalMode(env) !== "mock") throw new Error("Simulated payouts are off.");
     const created = parseInt(batchId.slice(4, -1), 36);
     const willFail = batchId.endsWith("F");
     if (Date.now() - created < 2500 || batchId.endsWith("P")) return { status: "PENDING", itemId: null, transactionId: null, error: null };
@@ -167,6 +173,7 @@ export async function getPayout(env: Env, batchId: string): Promise<PayoutState>
 // ---------------------------------------------------------------- Orders (the $2 mint)
 
 export async function createOrder(env: Env, purpose: "mint" | "fork"): Promise<string> {
+  if (paypalMode(env) === "live") throw new PayPalError(503, LIVE_PAYMENT_NOTICE);
   if (paypalMode(env) === "mock") return `MOCKORDER-${crypto.randomUUID()}`;
   const usd = (value: string) => ({ currency_code: "USD", value });
   const res = await api<{ id: string }>(env, "/v2/checkout/orders", {
@@ -193,14 +200,24 @@ export async function createOrder(env: Env, purpose: "mint" | "fork"): Promise<s
 
 /** Capture and verify the $2. Returns the capture id. Throws if anything is off. */
 export async function captureOrder(env: Env, orderId: string): Promise<string> {
+  if (paypalMode(env) === "live") throw new PayPalError(503, LIVE_PAYMENT_NOTICE);
   if (orderId.startsWith("MOCKORDER-")) {
     if (paypalMode(env) !== "mock") throw new Error("Simulated checkout is off.");
     return orderId;
   }
-  const res = await api<{
+  type CapturedOrder = {
     status: string;
     purchase_units: { payments?: { captures?: { id: string; status: string; amount: { value: string; currency_code: string } }[] } }[];
-  }>(env, `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, { method: "POST", idempotencyKey: `cap-${orderId}` });
+  };
+  let res: CapturedOrder;
+  try {
+    res = await api<CapturedOrder>(env, `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, {method: "POST", idempotencyKey: `cap-${orderId}`});
+  } catch (error) {
+    // A successful capture can outlive a lost response or PayPal's idempotency retention window.
+    const existing = await api<CapturedOrder>(env, `/v2/checkout/orders/${encodeURIComponent(orderId)}`).catch(() => null);
+    if (existing?.status !== "COMPLETED") throw error;
+    res = existing;
+  }
   const cap = res.purchase_units?.[0]?.payments?.captures?.[0];
   if (res.status !== "COMPLETED" || !cap || cap.status !== "COMPLETED") throw new Error("Payment didn't complete.");
   if (cap.amount.value !== MINT_PRICE || cap.amount.currency_code !== "USD") throw new Error("Unexpected payment amount.");
@@ -240,6 +257,7 @@ const EVENT_STATUS: Record<string, string> = {
   "PAYMENT.PAYOUTS-ITEM.DENIED": "DENIED",
   "PAYMENT.PAYOUTS-ITEM.RETURNED": "RETURNED",
   "PAYMENT.PAYOUTS-ITEM.REFUNDED": "REFUNDED",
+  "PAYMENT.PAYOUTS-ITEM.REVERSED": "REVERSED",
   "PAYMENT.PAYOUTS-ITEM.CANCELED": "CANCELED",
   "PAYMENT.PAYOUTS-ITEM.HELD": "ONHOLD",
 };

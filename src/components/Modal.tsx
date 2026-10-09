@@ -1,19 +1,33 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose); close.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () => Array.from(dialog.current?.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex="0"]') ?? []).filter(el => el.getClientRects().length > 0);
+    if (!dialog.current?.contains(document.activeElement)) (focusable()[0] ?? dialog.current)?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); close.current(); }
+      if (e.key !== "Tab") return;
+      const elements = focusable(), first = elements[0], last = elements.at(-1);
+      if (!first) {e.preventDefault(); dialog.current?.focus();}
+      else if (e.shiftKey && (document.activeElement === first || !dialog.current?.contains(document.activeElement))) {e.preventDefault(); last?.focus();}
+      else if (!e.shiftKey && document.activeElement === last) {e.preventDefault(); first.focus();}
+    };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 backdrop-blur-sm sm:items-center sm:p-6" onClick={onClose}>
       <div
+        ref={dialog} tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}

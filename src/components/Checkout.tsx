@@ -1,3 +1,4 @@
+import { LIVE_PAYMENT_NOTICE } from "../../shared/payments";
 import { useEffect, useRef, useState } from "react";
 import type { AppConfig } from "../../shared/types";
 import { api } from "../api";
@@ -45,6 +46,7 @@ const TEST_CARD = [
 ] as const;
 
 type Props = {
+  recoveryKey: string;
   config: AppConfig | null;
   purpose: "mint" | "fork";
   /** Return an error message to block checkout, or null to proceed. */
@@ -54,13 +56,13 @@ type Props = {
 };
 
 /** $2: one dollar rides with the bill, one keeps the lights on. Real PayPal sandbox checkout, or a simulation in mock mode. */
-export function Checkout({ config, purpose, validate, onPaid, onError }: Props) {
+export function Checkout({ recoveryKey, config, purpose, validate, onPaid, onError }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const latest = useRef({ validate, onPaid, onError });
   latest.current = { validate, onPaid, onError };
   const [busy, setBusy] = useState(false);
   const sandbox = config?.paypalMode === "sandbox";
-  const real = sandbox || config?.paypalMode === "live";
+  const real = sandbox;
 
   useEffect(() => {
     if (!real || !config.paypalClientId || !el.current) return;
@@ -81,7 +83,7 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
               actions.reject();
             } else actions.resolve();
           },
-          createOrder: async () => (await api.checkout(purpose)).orderId,
+          createOrder: async () => (await api.checkout(purpose,recoveryKey)).orderId,
           onApprove: async ({ orderID }) => {
             setBusy(true);
             try {
@@ -90,23 +92,23 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
               setBusy(false);
             }
           },
-          onError: () => latest.current.onError("PayPal hit a snag. Nothing was charged; try again."),
+          onError: () => latest.current.onError("PayPal hit a snag. Check the saved checkout below before starting another payment."),
         });
-        buttons.render(el.current);
+        return buttons.render(el.current);
       })
       .catch((e: Error) => latest.current.onError(e.message));
     return () => {
       cancelled = true;
       buttons?.close().catch(() => {});
     };
-  }, [config?.paypalMode, config?.paypalClientId, purpose]);
+  }, [config?.paypalMode, config?.paypalClientId, purpose, recoveryKey]);
 
   const simulate = async () => {
     const err = validate();
     if (err) return onError(err);
     setBusy(true);
     try {
-      const { orderId } = await api.checkout(purpose);
+      const { orderId } = await api.checkout(purpose,recoveryKey);
       await onPaid(orderId);
     } catch (e) {
       onError((e as Error).message);
@@ -115,6 +117,7 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
     }
   };
 
+  if (config?.paypalMode === "live") return <p role="status" className="rounded-xl border border-line p-4 text-sm">{LIVE_PAYMENT_NOTICE}</p>;
   return (
     <div>
       <div className="mb-3 rounded-xl border border-line bg-paper-2/60 p-3 text-sm">
@@ -131,9 +134,9 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
       ) : (
         <>
           <button type="button" className="btn btn-primary w-full !py-3.5" onClick={simulate} disabled={busy || !config}>
-            {busy ? "Printing your buck…" : "Pay $2 (simulated)"}
+            {busy ? "Printing your buck…" : !config ? "Loading checkout…" : "Pay $2 (simulated)"}
           </button>
-          <p className="mt-2 text-center text-xs text-muted">Demo mode: PayPal is simulated until sandbox keys are configured.</p>
+          <p className="mt-2 text-center text-xs text-muted">Demo mode: checkout and payouts are simulated. No real money moves.</p>
         </>
       )}
       {busy && real && <p className="mt-2 text-center text-sm font-medium">Printing your buck…</p>}

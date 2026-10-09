@@ -19,7 +19,7 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
 
   useEffect(() => {
     api.creator(bill.serial, token).then(setView, () => setView({ valid: false }));
-  }, [bill.serial, token, bill.status]);
+  }, [bill.serial, token, bill.status, bill.version]);
 
   const goalHit = bill.goalHops != null && bill.hopCount >= bill.goalHops;
   useEffect(() => {

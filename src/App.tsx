@@ -1,10 +1,12 @@
 import { Suspense, lazy, useEffect } from "react";
-import { Link, Route, Switch, useLocation } from "wouter";
+import { Link, Route, Switch, useLocation, useParams } from "wouter";
 import { BillPage } from "./pages/Bill";
 import { Home } from "./pages/Home";
 import { FollowManage, NotFound, Release, Wild } from "./pages/Other";
 import { PageMetadata } from "./components/PageMetadata";
 import { Info } from "./pages/Info";
+import { PaymentProvider, usePaymentMode } from "./paymentMode";
+import { paymentNotice } from "../shared/payments";
 import { INFO_LINKS } from "../shared/info";
 
 // The grid and chart libraries only load for Open Books.
@@ -23,7 +25,17 @@ function ScrollToTop() {
   return null;
 }
 
+function BillRoute() {
+  const {serial} = useParams<{serial: string}>();
+  return <BillPage key={serial.toUpperCase()} />;
+}
+
 export function App() {
+  return <PaymentProvider><AppContents /></PaymentProvider>;
+}
+
+function AppContents() {
+  const mode = usePaymentMode();
   return (
     <div className="flex min-h-dvh flex-col">
       <ScrollToTop />
@@ -52,7 +64,7 @@ export function App() {
           <Route path="/release" component={Release} />
           <Route path="/wild" component={Wild} />
           <Route path="/books" component={BooksRoute} />
-          <Route path="/b/:serial" component={BillPage} />
+          <Route path="/b/:serial" component={BillRoute} />
           <Route path="/f/:id" component={FollowManage} />
           {INFO_LINKS.map(({ path }) => <Route key={path} path={path} component={Info} />)}
           <Route component={NotFound} />
@@ -64,7 +76,7 @@ export function App() {
             <div>
               <span className="font-display font-semibold text-ink">Four Word Pass</span> <span className="italic">(say it out loud)</span> · Pay it forword.
             </div>
-            <div className="max-w-lg">PayPal sandbox beta: no real money changes hands. People write the story; AI gives the bill its diary, stamps, and eulogy.</div>
+            <div className="max-w-lg">{paymentNotice(mode)} People write the story; AI gives the bill its diary, stamps, and eulogy.</div>
           </div>
           <nav aria-label="Information" className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
             <Link href="/books" className="font-semibold text-ink underline-offset-4 hover:underline">Open books</Link>

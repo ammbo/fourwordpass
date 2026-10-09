@@ -29,6 +29,8 @@ export type BillRow = {
   featured: number;
   is_seed: number;
   checkout_order_id: string | null;
+  checkout_mode: string | null;
+  active_pass_id: string | null;
   returned_pass_id: string | null;
   version: number;
   created_at: number;
@@ -81,6 +83,7 @@ export type HopRow = {
   diary_done: number;
   followers_notified: number;
   fx_attempts: number;
+  fx_lease_until: number;
   created_at: number;
   confirmed_at: number | null;
 };

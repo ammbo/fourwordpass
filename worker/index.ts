@@ -1,5 +1,7 @@
 import { Hono } from "hono";
-import type { AppConfig, FollowPreference, HomeData } from "../shared/types";
+import { bodyLimit } from "hono/body-limit";
+import { z } from "zod";
+import type { AppConfig, HomeData } from "../shared/types";
 import { checkFourWords, normalizeWords } from "../shared/words";
 import { admin } from "./admin";
 import { openBooks } from "./books";
@@ -9,10 +11,11 @@ import { runCron } from "./cron";
 import { type PassRow, getBillBySerial, getPass, storyTail } from "./db";
 import * as engine from "./engine";
 import { UserError } from "./engine";
-import { createOrder, paypalMode, parsePayoutEvent, verifyWebhook } from "./paypal";
-import { checkCap, newId, now, placeFromRequest, placeLabel } from "./util";
+import { createOrder, PayPalError, paypalMode, parsePayoutEvent, verifyWebhook } from "./paypal";
+import { checkCap, newId, now, placeFromRequest, placeLabel, recoveryHash } from "./util";
 import { SUGGESTIONS_PER_HOLDER, creatorView, holderView, publicBill, summaries } from "./views";
 import { servePage, serveSitemap } from "./seo";
+import { parseStoryCursor } from "./history";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -23,6 +26,22 @@ async function limit(binding: RateLimit, key: string) {
   const { success } = await binding.limit({ key });
   if (!success) throw new UserError("Slow down a little. The buck isn't going anywhere.", 429);
 }
+
+const token = z.string().min(1).max(256);
+const emailSchema = z.string().trim().min(3).max(254);
+const mintSchema = z.object({
+  orderId: z.string().min(1).max(128), recoveryKey: z.string().min(32).max(128), creatorEmail: emailSchema,
+  words: z.string().max(90), theme: z.string().max(140).nullish(), goal: z.number().int().min(2).max(100_000).nullish(),
+  firstRecipient: emailSchema.nullish(), penName: z.string().max(24).nullish(), showCity: z.boolean().optional(),
+});
+async function readBody<T extends z.ZodType>(c: {req: {json(): Promise<unknown>}}, schema: T): Promise<z.infer<T>> {
+  let value: unknown;
+  try { value = await c.req.json(); } catch { throw new UserError("Send a valid JSON request."); }
+  const result = schema.safeParse(value);
+  if (!result.success) throw new UserError(`Invalid ${result.error.issues[0]?.path.join(".") || "request"}: ${result.error.issues[0]?.message}`);
+  return result.data;
+}
+app.use("/api/*", bodyLimit({maxSize: 32_768, onError: c => c.json({error: "That request is too large."},413)}));
 
 // "Four" is a homonym. Every spelling someone might hear lands on the real site.
 const CANONICAL_HOST = "fourwordpass.com";
@@ -40,6 +59,7 @@ app.use("*", async (c, next) => {
 
 app.onError((err, c) => {
   if (err instanceof UserError) return c.json({ error: err.message }, err.status as 400);
+  if (err instanceof PayPalError && err.status === 503) return c.json({error: err.message},503);
   console.error(err);
   return c.json({ error: "Something went wrong. The buck is looking into it." }, 500);
 });
@@ -53,7 +73,8 @@ app.use("/api/*", async (c, next) => {
 // ------------------------------------------------------------------ read
 
 app.get("/api/config", (c) => {
-  const mode = paypalMode(c.env);
+  let mode;
+  try { mode = paypalMode(c.env); } catch { return c.json({error: "Checkout is unavailable because PayPal is not configured."},503); }
   const place = placeFromRequest(c.req.raw);
   return c.json<AppConfig & { place: string | null }>({
     paypalMode: mode,
@@ -93,7 +114,10 @@ app.get("/api/books", async (c) => c.json(await openBooks(c.env)));
 app.get("/api/bills/:serial", async (c) => {
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) return c.json({ error: "No bill by that serial." }, 404);
-  return c.json(await publicBill(c.env, bill));
+  let cursor;
+  try { cursor = parseStoryCursor(new URL(c.req.url).searchParams); }
+  catch (e) { throw new UserError((e as Error).message); }
+  return c.json(await publicBill(c.env, bill, cursor));
 });
 
 /** Cheap version check for live pages. */
@@ -126,8 +150,11 @@ app.get("/api/stamps/:key", async (c) => {
 
 app.post("/api/checkout", async (c) => {
   await limit(c.env.RL_WRITE, `checkout:${ip(c.req.raw)}`);
-  const { purpose } = await c.req.json<{ purpose: "mint" | "fork" }>();
-  return c.json({ orderId: await createOrder(c.env, purpose === "fork" ? "fork" : "mint") });
+  const { purpose, recoveryKey } = await readBody(c, z.object({purpose: z.enum(["mint","fork"]), recoveryKey: z.string().min(32).max(128)}));
+  const orderId = await createOrder(c.env,purpose);
+  await c.env.DB.prepare("INSERT INTO checkout_orders (order_id,recovery_hash,paypal_mode,purpose,created_at) VALUES (?,?,?,?,?)")
+    .bind(orderId,await recoveryHash(recoveryKey),paypalMode(c.env),purpose,now()).run();
+  return c.json({orderId});
 });
 
 async function checkedWords(env: Env, words: string) {
@@ -140,7 +167,7 @@ async function checkedWords(env: Env, words: string) {
 
 app.post("/api/bills", async (c) => {
   await limit(c.env.RL_WRITE, `mint:${ip(c.req.raw)}`);
-  const body = await c.req.json<engine.MintInput>();
+  const body = await readBody(c, mintSchema);
   await checkedWords(c.env, body.words);
   const out = await engine.mintBill(c.env, ctxOf(c), placeFromRequest(c.req.raw), { ...body, fork: undefined });
   return c.json(out);
@@ -148,7 +175,7 @@ app.post("/api/bills", async (c) => {
 
 app.post("/api/bills/:serial/fork", async (c) => {
   await limit(c.env.RL_WRITE, `mint:${ip(c.req.raw)}`);
-  const body = await c.req.json<engine.MintInput & { atHop: number }>();
+  const body = await readBody(c, mintSchema.extend({atHop: z.number().int().min(1)}));
   await checkedWords(c.env, body.words);
   const out = await engine.mintBill(c.env, ctxOf(c), placeFromRequest(c.req.raw), {
     ...body,
@@ -159,7 +186,7 @@ app.post("/api/bills/:serial/fork", async (c) => {
 
 app.post("/api/bills/:serial/contribute", async (c) => {
   await limit(c.env.RL_WRITE, `contribute:${ip(c.req.raw)}`);
-  const body = await c.req.json<engine.ContributeInput & { t: string }>();
+  const body = await readBody(c, z.object({t: token, words: z.string().max(90), next: emailSchema.nullable(), note: z.string().max(140).nullish(), penName: z.string().max(24).nullish(), showCity: z.boolean().optional(), aiAssisted: z.boolean().optional()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   if (!(await checkCap(c.env, "holder", bill.holder_pass_id, body.t))) throw new UserError("This buck has moved on.", 403);
@@ -170,7 +197,7 @@ app.post("/api/bills/:serial/contribute", async (c) => {
 /** Not for you: the bill goes back to whoever passed it to you, or back to the wild if you claimed it. */
 app.post("/api/bills/:serial/decline", async (c) => {
   await limit(c.env.RL_WRITE, `decline:${ip(c.req.raw)}`);
-  const body = await c.req.json<{ t: string }>();
+  const body = await readBody(c, z.object({t: token}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   if (!(await checkCap(c.env, "holder", bill.holder_pass_id, body.t))) throw new UserError("This buck has moved on.", 403);
@@ -180,7 +207,7 @@ app.post("/api/bills/:serial/decline", async (c) => {
 /** A bill that came back: its holder, or its creator when it was the first hand-off, picks someone new. */
 app.post("/api/bills/:serial/repass", async (c) => {
   await limit(c.env.RL_WRITE, `contribute:${ip(c.req.raw)}`);
-  const body = await c.req.json<{ t?: string; c?: string; next: string | null }>();
+  const body = await readBody(c, z.object({t: token.optional(), c: token.optional(), next: emailSchema.nullable()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   const allowed = bill.holder_pass_id
@@ -192,7 +219,7 @@ app.post("/api/bills/:serial/repass", async (c) => {
 
 app.post("/api/bills/:serial/claim", async (c) => {
   await limit(c.env.RL_WRITE, `claim:${ip(c.req.raw)}`);
-  const { email } = await c.req.json<{ email: string }>();
+  const { email } = await readBody(c, z.object({email: emailSchema}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   return c.json(await engine.claimFromWild(c.env, ctxOf(c), bill, email));
@@ -200,7 +227,7 @@ app.post("/api/bills/:serial/claim", async (c) => {
 
 app.post("/api/bills/:serial/suggest", async (c) => {
   await limit(c.env.RL_AI, `suggest:${ip(c.req.raw)}`);
-  const body = await c.req.json<{ t?: string; c?: string; mode?: "finale" }>();
+  const body = await readBody(c, z.object({t: token.optional(), c: token.optional(), mode: z.literal("finale").optional()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   const tail = await storyTail(c.env, bill.id, body.mode === "finale" ? 160 : 50);
@@ -221,7 +248,8 @@ app.post("/api/bills/:serial/suggest", async (c) => {
 });
 
 app.post("/api/bills/:serial/finale", async (c) => {
-  const body = await c.req.json<{ c: string; words: string }>();
+  await limit(c.env.RL_WRITE, `finale:${ip(c.req.raw)}`);
+  const body = await readBody(c, z.object({c: token, words: z.string().max(200)}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   if (!(await checkCap(c.env, "creator", bill.id, body.c))) throw new UserError("Only the creator can end this story.", 403);
@@ -231,7 +259,7 @@ app.post("/api/bills/:serial/finale", async (c) => {
 
 app.post("/api/bills/:serial/follow", async (c) => {
   await limit(c.env.RL_WRITE, `follow:${ip(c.req.raw)}`);
-  const body = await c.req.json<{ email: string; preference: FollowPreference }>();
+  const body = await readBody(c, z.object({email: emailSchema, preference: z.enum(["every_hop","on_end"])}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   await engine.follow(c.env, bill, body.email, body.preference === "every_hop" ? "every_hop" : "on_end");
@@ -249,21 +277,21 @@ app.post("/api/bills/:serial/resend", async (c) => {
 app.get("/api/follows/:id", async (c) => {
   const id = c.req.param("id");
   if (!(await checkCap(c.env, "follow", id, c.req.query("t")))) throw new UserError("That link has expired.", 403);
-  const row = await c.env.DB.prepare("SELECT f.preference, b.serial FROM follows f JOIN bills b ON b.id = f.bill_id WHERE f.id = ?").bind(id).first<{ preference: string; serial: string }>();
+  const row = await c.env.DB.prepare("SELECT f.preference, f.verified, b.serial FROM follows f JOIN bills b ON b.id = f.bill_id WHERE f.id = ?").bind(id).first<{ preference: string; verified: number; serial: string }>();
   return c.json(row ?? { preference: null, serial: null });
 });
 
 app.post("/api/follows/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json<{ t: string; preference: FollowPreference | "unfollow" }>();
+  const body = await readBody(c, z.object({t: token, preference: z.enum(["every_hop","on_end","unfollow"])}));
   if (!(await checkCap(c.env, "follow", id, body.t))) throw new UserError("That link has expired.", 403);
   const row = await c.env.DB.prepare("SELECT bill_id FROM follows WHERE id = ?").bind(id).first<{ bill_id: string }>();
   if (!row) return c.json({ ok: true });
   await c.env.DB.batch([
     body.preference === "unfollow"
-      ? c.env.DB.prepare("DELETE FROM follows WHERE id = ?").bind(id)
-      : c.env.DB.prepare("UPDATE follows SET preference = ? WHERE id = ?").bind(body.preference === "every_hop" ? "every_hop" : "on_end", id),
-    c.env.DB.prepare("UPDATE bills SET follower_count = (SELECT COUNT(*) FROM follows WHERE bill_id = ?1), version = version + 1 WHERE id = ?1").bind(row.bill_id),
+      ? c.env.DB.prepare("UPDATE follows SET verified = 0, opted_out = 1 WHERE id = ?").bind(id)
+      : c.env.DB.prepare("UPDATE follows SET preference = ?, verified = 1, opted_out = 0 WHERE id = ?").bind(body.preference === "every_hop" ? "every_hop" : "on_end", id),
+    c.env.DB.prepare("UPDATE bills SET follower_count = (SELECT COUNT(*) FROM follows WHERE bill_id = ?1 AND verified = 1), version = version + 1 WHERE id = ?1").bind(row.bill_id),
   ]);
   return c.json({ ok: true });
 });
@@ -282,7 +310,7 @@ app.post("/api/webhooks/paypal", async (c) => {
   await c.env.DB.prepare("INSERT INTO payout_events (id, pass_id, event_type, paypal_item_id, raw, received_at) VALUES (?,?,?,?,?,?)")
     .bind(newId(), pass?.id ?? null, event.event_type ?? "unknown", parsed?.state.itemId ?? null, raw.slice(0, 20000), now())
     .run();
-  if (pass && parsed) await engine.applyPayoutState(c.env, ctxOf(c), pass, parsed.state);
+  if (pass && parsed && pass.paypal_mode === paypalMode(c.env)) await engine.applyPayoutState(c.env, ctxOf(c), pass, parsed.state);
   return c.json({ ok: true });
 });
 

@@ -5,7 +5,6 @@
 
 import type { BooksRow, OpenBooks } from "../shared/types";
 import { countContent } from "../shared/words";
-import { paypalMode } from "./paypal";
 import { maskId } from "./util";
 
 const LEDGER_LIMIT = 2000;
@@ -26,9 +25,9 @@ const PASS_KIND: Record<string, BooksRow["kind"]> = { mint: "first_holder", fork
 export async function openBooks(env: Env): Promise<OpenBooks> {
   const [checkouts, passes, totals, words, finales, voice, stamps] = await Promise.all([
     env.DB.prepare(
-      `SELECT id, serial, checkout_order_id, forked_from_bill_id, created_at FROM bills
+      `SELECT id, serial, checkout_order_id, checkout_mode, forked_from_bill_id, created_at FROM bills
        WHERE checkout_order_id IS NOT NULL ORDER BY created_at DESC LIMIT ?`,
-    ).bind(LEDGER_LIMIT).all<{ id: string; serial: string; checkout_order_id: string; forked_from_bill_id: string | null; created_at: number }>(),
+    ).bind(LEDGER_LIMIT).all<{ id: string; serial: string; checkout_order_id: string; checkout_mode: BooksRow["mode"]; forked_from_bill_id: string | null; created_at: number }>(),
     env.DB.prepare(
       `SELECT p.id, p.kind, p.status, p.paypal_mode, p.paypal_status, p.payout_item_id, p.payout_batch_id, p.created_at, p.settled_at,
               b.serial, h.idx AS hop_idx, h.status AS hop_status,
@@ -78,8 +77,7 @@ export async function openBooks(env: Env): Promise<OpenBooks> {
       secondsToLand: null,
       settledBy: null,
       webhook: false,
-      // Checkouts don't record their mode; real orders are labeled with the current one.
-      mode: b.checkout_order_id.startsWith("MOCKORDER-") ? "mock" : paypalMode(env),
+      mode: b.checkout_mode,
     })),
     ...passes.results.map((p): BooksRow => ({
       id: opaque(p.id),

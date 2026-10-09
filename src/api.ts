@@ -20,6 +20,7 @@ async function req<T>(path: string, body?: unknown): Promise<T> {
 
 export type MintBody = {
   orderId: string;
+  recoveryKey: string;
   creatorEmail: string;
   words: string;
   theme?: string | null;
@@ -34,11 +35,11 @@ export const api = {
   home: () => req<HomeData>("/api/home"),
   wild: () => req<BillSummary[]>("/api/wild"),
   books: () => req<OpenBooks>("/api/books"),
-  bill: (serial: string) => req<PublicBill>(`/api/bills/${serial}`),
+  bill: (serial: string, cursor: {before?: number; after?: number} = {}) => req<PublicBill>(`/api/bills/${serial}?${new URLSearchParams(Object.entries(cursor).map(([k,v]) => [k,String(v)]))}`),
   version: (serial: string) => req<{ v: number }>(`/api/bills/${serial}/v`),
   holder: (serial: string, t: string) => req<HolderView>(`/api/bills/${serial}/holder?t=${encodeURIComponent(t)}`),
   creator: (serial: string, c: string) => req<CreatorView>(`/api/bills/${serial}/creator?c=${encodeURIComponent(c)}`),
-  checkout: (purpose: "mint" | "fork") => req<{ orderId: string }>("/api/checkout", { purpose }),
+  checkout: (purpose: "mint" | "fork", recoveryKey: string) => req<{ orderId: string }>("/api/checkout", { purpose, recoveryKey }),
   mint: (body: MintBody) => req<{ serial: string; creatorToken: string }>("/api/bills", body),
   fork: (serial: string, body: MintBody & { atHop: number }) => req<{ serial: string; creatorToken: string }>(`/api/bills/${serial}/fork`, body),
   contribute: (serial: string, body: { t: string; words: string; next: string | null; note?: string; penName?: string; showCity: boolean; aiAssisted: boolean }) =>
@@ -50,7 +51,7 @@ export const api = {
   follow: (serial: string, email: string, preference: FollowPreference) => req<{ ok: true }>(`/api/bills/${serial}/follow`, { email, preference }),
   finale: (serial: string, c: string, words: string) => req<{ ok: true }>(`/api/bills/${serial}/finale`, { c, words }),
   resend: (serial: string) => req<{ ok: true }>(`/api/bills/${serial}/resend`, {}),
-  followGet: (id: string, t: string) => req<{ preference: FollowPreference | null; serial: string | null }>(`/api/follows/${id}?t=${encodeURIComponent(t)}`),
+  followGet: (id: string, t: string) => req<{ preference: FollowPreference | null; verified?: number; serial: string | null }>(`/api/follows/${id}?t=${encodeURIComponent(t)}`),
   followSet: (id: string, t: string, preference: FollowPreference | "unfollow") => req<{ ok: true }>(`/api/follows/${id}`, { t, preference }),
 };
 
@@ -59,7 +60,7 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(() => {
-    fn().then(setData, (e: Error) => setError(e.message));
+    fn().then((value) => { setData(value); setError(null); }, (e: Error) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   useEffect(reload, [reload]);
@@ -71,21 +72,36 @@ export function useLiveBill(serial: string) {
   const [bill, setBill] = useState<PublicBill | null>(null);
   const [error, setError] = useState<string | null>(null);
   const version = useRef(-2);
+  const generation = useRef(0);
+  const [cursor, setCursor] = useState<{before?: number; after?: number}>(() => {
+    const params = new URLSearchParams(location.search);
+    const key = params.has("before") ? "before" : params.has("after") ? "after" : null;
+    const value = key ? Number(params.get(key)) : NaN;
+    return key && Number.isSafeInteger(value) && value >= 0 ? {[key]: value} : {};
+  });
+  const [loadingPage, setLoadingPage] = useState(false);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
+    const request = ++generation.current;
+    setLoadingPage(true);
     try {
-      const b = await api.bill(serial);
+      const b = await api.bill(serial, cursor);
+      if (request !== generation.current) return;
       version.current = b.version;
       setBill(b);
       setError(null);
     } catch (e) {
+      if (request !== generation.current) return;
       setError((e as Error).message);
+      setErrorStatus(e instanceof ApiError ? e.status : null);
+    } finally {
+      if (request === generation.current) setLoadingPage(false);
     }
-  }, [serial]);
+  }, [serial, cursor]);
 
   useEffect(() => {
     version.current = -2;
-    setBill(null);
     refresh();
     const timer = setInterval(async () => {
       if (document.visibilityState !== "visible") return;
@@ -96,22 +112,29 @@ export function useLiveBill(serial: string) {
         /* offline: try again next tick */
       }
     }, 3000);
-    return () => clearInterval(timer);
+    return () => { generation.current++; clearInterval(timer); };
   }, [serial, refresh]);
 
-  return { bill, error, refresh };
+  const changePage = (next: {before?: number; after?: number}) => {
+    const url = new URL(location.href);
+    url.searchParams.delete("before"); url.searchParams.delete("after");
+    Object.entries(next).forEach(([k,v]) => url.searchParams.set(k,String(v)));
+    history.replaceState(history.state,"",url.pathname + url.search + url.hash);
+    setCursor(next);
+  };
+  return { bill, error, errorStatus, refresh, changePage, loadingPage };
 }
 
 /** Tokens arrive in the URL from email links; move them to storage and out of the address bar. */
 export function useUrlToken(param: "t" | "c", serial: string, storage: "session" | "local"): [string | null, (v: string | null) => void] {
   const key = `fwp:${param}:${serial}`;
-  const store = storage === "session" ? sessionStorage : localStorage;
+  const getStore = () => storage === "session" ? sessionStorage : localStorage;
   const [value, setValue] = useState<string | null>(() => {
     const url = new URL(location.href);
     const fromUrl = url.searchParams.get(param);
     try {
-      if (fromUrl) store.setItem(key, fromUrl);
-      return fromUrl ?? store.getItem(key);
+      if (fromUrl) getStore().setItem(key, fromUrl);
+      return fromUrl ?? getStore().getItem(key);
     } catch {
       return fromUrl;
     }
@@ -126,14 +149,14 @@ export function useUrlToken(param: "t" | "c", serial: string, storage: "session"
   const set = useCallback(
     (v: string | null) => {
       try {
-        if (v) store.setItem(key, v);
-        else store.removeItem(key);
+        if (v) getStore().setItem(key, v);
+        else getStore().removeItem(key);
       } catch {
         /* storage blocked */
       }
       setValue(v);
     },
-    [key, store],
+    [key, storage],
   );
   return [value, set];
 }

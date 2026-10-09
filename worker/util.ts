@@ -91,3 +91,8 @@ function countryName(code: string): string {
 export function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+export async function recoveryHash(key: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,"0")).join("");
+}

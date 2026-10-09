@@ -2,6 +2,7 @@
 
 import type { BillRow, PassRow } from "./db";
 import * as engine from "./engine";
+import { retryMail } from "./email";
 import { DAY, HOUR, now } from "./util";
 
 type Ctx = { waitUntil(p: Promise<unknown>): void };
@@ -16,17 +17,35 @@ async function safely(label: string, fn: () => Promise<unknown>) {
 
 export async function runCron(env: Env, ctx: Ctx) {
   const t = now();
+  await safely("notifications", () => engine.runNotificationJobs(env));
+  await safely("mail", () => retryMail(env));
+  await safely("mint-recovery", async () => {
+    const {results} = await env.DB.prepare(`SELECT a.input_json,a.place_json FROM mint_attempts a LEFT JOIN bills b ON b.id = a.bill_id
+      WHERE a.created_at < ? AND a.created_at > ? AND (b.id IS NULL OR (b.status = 'in_transit' AND b.active_pass_id IS NULL)) LIMIT 3`)
+      .bind(t - 30_000, t - DAY).all<{input_json: string; place_json: string}>();
+    for (const a of results) await safely("mint-resume", () => engine.mintBill(env, ctx, JSON.parse(a.place_json), JSON.parse(a.input_json)));
+  });
 
   // 1. Payouts in flight: poll the ones the webhook hasn't settled, retry the ones a PayPal
   //    hiccup stopped (left alone for 30s so a slow first attempt isn't raced), and fail any
   //    that are stuck past the timeout.
   await safely("poll", async () => {
     const { results } = await env.DB.prepare(
-      `SELECT * FROM passes WHERE status = 'pending' AND next_poll_at <= ?1
+      `SELECT * FROM passes WHERE (status = 'pending' OR paypal_status = 'UNCLAIMED') AND next_poll_at <= ?1
          AND (payout_batch_id IS NOT NULL OR created_at < ?1 - 30000)
        ORDER BY next_poll_at LIMIT 25`,
     ).bind(t).all<PassRow>();
     for (const p of results) await safely(`poll:${p.id}`, () => engine.advancePass(env, ctx, p));
+  });
+
+  // Repair previously interrupted settlements using their exact reserved pass.
+  await safely("settlement-repair", async () => {
+    const {results} = await env.DB.prepare(`SELECT p.* FROM passes p JOIN bills b ON b.active_pass_id = p.id
+      WHERE b.status = 'in_transit' AND p.status != 'pending' LIMIT 10`).all<PassRow>();
+    for (const p of results) await safely(`repair:${p.id}`, () => engine.applyPayoutState(env, ctx, p, {
+      status: p.paypal_status ?? (p.status === "delivered" ? "SUCCESS" : "FAILED"),
+      itemId: p.payout_item_id, transactionId: p.transaction_id, error: p.error,
+    }));
   });
 
   // 2. Side effects that waitUntil didn't finish (holder email, diary, followers, stamp).
@@ -39,7 +58,7 @@ export async function runCron(env: Env, ctx: Ctx) {
   await safely("hop-fx", async () => {
     const { results } = await env.DB.prepare(
       `SELECT h.id FROM hops h JOIN bills b ON b.id = h.bill_id
-       WHERE h.status = 'confirmed' AND h.inherited_from_hop_id IS NULL AND b.is_seed = 0
+       WHERE h.status = 'confirmed' AND h.inherited_from_hop_id IS NULL 
          AND (h.diary_done = 0 OR h.followers_notified = 0 OR h.stamp_status = 'pending') AND h.confirmed_at < ?
        ORDER BY h.confirmed_at LIMIT 4`,
     ).bind(t - 45_000).all<{ id: string }>();

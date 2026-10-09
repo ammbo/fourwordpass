@@ -2,20 +2,22 @@
 
 import type { BillSummary, CreatorView, HolderView, PassFailure, PublicBill, PublicHop, Receipt } from "../shared/types";
 import { maskEmail } from "../shared/words";
-import { type BillRow, type HopRow, type PassRow, getPass, latestPendingPass, personalityOf } from "./db";
+import { type BillRow, type PassRow, getPass, latestPendingPass, personalityOf } from "./db";
 import { TIMED_OUT } from "./engine";
+import { readHopPage, type StoryCursor } from "./history";
 import { checkCap, maskId, placeFromRequest, placeLabel } from "./util";
 
 const SUGGESTIONS_PER_HOLDER = 5;
 
-export async function publicBill(env: Env, bill: BillRow): Promise<PublicBill> {
+export async function publicBill(env: Env, bill: BillRow, cursor: StoryCursor = {}): Promise<PublicBill> {
+  const page = await readHopPage(env, bill.id, cursor);
   const [hopsRes, passesRes, diaryRes, parent, forksRes] = await Promise.all([
-    env.DB.prepare("SELECT * FROM hops WHERE bill_id = ? AND status = 'confirmed' ORDER BY idx ASC LIMIT 5000").bind(bill.id).all<HopRow>(),
+    Promise.resolve({results: page.rows}),
     env.DB.prepare(
       `SELECT p.id, p.paypal_mode, p.payout_item_id, p.payout_batch_id, p.paypal_status FROM passes p
-       WHERE p.status = 'delivered' AND p.id IN (SELECT received_pass_id FROM hops WHERE bill_id = ?1 AND status = 'confirmed'
+       WHERE p.id IN (SELECT received_pass_id FROM hops WHERE bill_id = ?1 AND status = 'confirmed' AND idx BETWEEN ?2 AND ?3
          UNION SELECT p2.id FROM passes p2 JOIN hops h ON h.id = p2.from_hop_id WHERE h.bill_id = ?1 AND p2.kind IN ('mint','fork'))`,
-    ).bind(bill.id).all<Pick<PassRow, "id" | "paypal_mode" | "payout_item_id" | "payout_batch_id" | "paypal_status">>(),
+    ).bind(bill.id, page.rows[0]?.idx ?? 0, page.rows.at(-1)?.idx ?? 0).all<Pick<PassRow, "id" | "paypal_mode" | "payout_item_id" | "payout_batch_id" | "paypal_status">>(),
     env.DB.prepare("SELECT kind, day_label, text, created_at FROM diary WHERE bill_id = ? ORDER BY created_at DESC LIMIT 400").bind(bill.id).all<{ kind: string; day_label: string | null; text: string; created_at: number }>(),
     bill.forked_from_bill_id ? env.DB.prepare("SELECT serial FROM bills WHERE id = ?").bind(bill.forked_from_bill_id).first<{ serial: string }>() : null,
     env.DB.prepare("SELECT serial, forked_at_hop, hop_count, status FROM bills WHERE forked_from_bill_id = ? ORDER BY created_at").bind(bill.id).all<{ serial: string; forked_at_hop: number; hop_count: number; status: BillRow["status"] }>(),
@@ -60,6 +62,8 @@ export async function publicBill(env: Env, bill: BillRow): Promise<PublicBill> {
   }
 
   return {
+    paymentMode: env.PAYPAL_MODE as PublicBill["paymentMode"],
+    history: page.history,
     serial: bill.serial,
     status: bill.status,
     theme: bill.theme,

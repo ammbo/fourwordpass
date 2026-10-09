@@ -1,14 +1,17 @@
-import { BETA_NOTICE, FAQ, PAGES, SITE_NAME, SITE_URL, billMeta, escapeHtml, pageMeta, renderHead, type PageMeta } from "../shared/site";
+import { paymentNotice } from "../shared/payments";
+import { readHopPage, parseStoryCursor } from "./history";
+import type { PayPalMode } from "../shared/types";
+import { faqForMode, PAGES, SITE_NAME, SITE_URL, billMeta, escapeHtml, pageMeta, renderHead, type PageMeta } from "../shared/site";
 import { getBillBySerial, personalityOf } from "./db";
 import { INFO_LINKS, INFO_PAGES, infoHtml } from "../shared/info";
 
 type LinkBill = { serial: string; personality: string; is_seed: number };
 
 /** Useful public HTML before JavaScript loads; React replaces it on startup. */
-function publicHtml(meta: PageMeta, content: string) {
+function publicHtml(meta: PageMeta, content: string, mode: PayPalMode) {
   return `<div style="max-width:68rem;margin:auto;padding:2rem 1rem;font-family:Georgia,serif;color:#17402f">
     <header><a href="/">${SITE_NAME}</a><nav aria-label="Main navigation" style="margin:1rem 0"><a href="/wild">The wild</a> · <a href="/release">Release a buck</a></nav></header>
-    <main><h1>${escapeHtml(meta.heading)}</h1>${content}<p>${BETA_NOTICE}</p></main>
+    <main><h1>${escapeHtml(meta.heading)}</h1>${content}<p>${escapeHtml(paymentNotice(mode))}</p></main>
     <footer><a href="/">Home</a> · <a href="/wild">Find a story</a> · ${INFO_LINKS.map(({ path, label }) => `<a href="${path}">${label}</a>`).join(" · ")}</footer></div>`;
 }
 
@@ -32,8 +35,13 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
     if (bill) {
       const canonicalPath = `/b/${bill.serial}`;
       if (path !== canonicalPath) return new Response(null, { status: 301, headers: { Location: `${canonicalPath}${url.search}`, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" } });
-      const { results: hops } = await env.DB.prepare("SELECT words, confirmed_at FROM hops WHERE bill_id = ? AND status = 'confirmed' ORDER BY idx ASC LIMIT 5000")
-        .bind(bill.id).all<{ words: string; confirmed_at: number | null }>();
+      let cursor;
+      try { cursor = parseStoryCursor(url.searchParams); }
+      catch { return new Response("Invalid story page", {status: 400}); }
+      const {rows: hops, history} = await readHopPage(env,bill.id,cursor);
+      const pagination = `<nav aria-label="Story pages">${history.olderBefore !== null ? `<a href="${canonicalPath}?after=0">Beginning</a> · <a href="${canonicalPath}?before=${history.olderBefore}">Earlier hops</a> · ` : ""}
+        ${hops.length ? `Hops ${hops[0].idx}–${hops.at(-1)!.idx}` : "No hops yet"}
+        ${history.newerAfter !== null ? ` · <a href="${canonicalPath}?after=${history.newerAfter}">Later hops</a> · <a href="${canonicalPath}">Latest</a>` : ""}</nav>`;
       const modifiedAt = Math.max(bill.created_at, bill.ended_at ?? 0, ...hops.map((h) => h.confirmed_at ?? 0));
       const name = personalityOf(bill).name;
       meta = billMeta({ serial: bill.serial, name, hopCount: bill.hop_count, teaser: hops.slice(-6).map((h) => h.words).join(" "), createdAt: bill.created_at, modifiedAt, isSeed: !!bill.is_seed });
@@ -41,8 +49,8 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
       content = `<article class="h-entry"><h2 class="p-name">${escapeHtml(name)}</h2>
         <p>${escapeHtml(bill.serial)} · ${bill.hop_count} hops${bill.is_seed ? " · Demo history (simulated)" : ""}</p>
         <a class="u-url" href="${SITE_URL}${meta.path}">Story permalink</a> · <time class="dt-published" datetime="${meta.published}">${new Date(bill.created_at).toISOString().slice(0, 10)}</time>
-        <div class="e-content"><h3>The Story</h3><p>${hops.map((h) => escapeHtml(h.words)).join(" ") || "Waiting for its first four words."}</p>
-        ${bill.finale_text ? `<h3>${bill.finale_by === "bill" ? "AI closing" : "The Finale"}</h3><p>${escapeHtml(bill.finale_text)}</p>` : ""}
+        ${pagination}<div class="e-content"><h3>The Story</h3><p>${hops.map((h) => escapeHtml(h.words)).join(" ") || "Waiting for its first four words."}</p>
+        ${history.newerAfter === null && bill.finale_text ? `<h3>${bill.finale_by === "bill" ? "AI closing" : "The Finale"}</h3><p>${escapeHtml(bill.finale_text)}</p>` : ""}
         ${bill.eulogy ? `<h3>The Eulogy (AI)</h3><p>${escapeHtml(bill.eulogy)}</p>` : ""}</div>
         <p>Enable JavaScript to explore the map, diary, and passport or contribute to this story.</p></article>`;
     } else {
@@ -58,10 +66,10 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
          <p><a href="/release">Start a story · $2</a> · <a href="/wild">Join a story · free</a></p>
          <h2>How the buck moves</h2><ol><li>Write the foreword: release a buck and write its first four words.</li><li>Add four content words. Small connecting words ride free.</li><li>Pass the buck by email, or release it to the wild, a public list where any stranger can claim it.</li></ol>
          <p>There's no page limit. One buck could pass through ten thousand hands: forty thousand words by strangers who never met, four at a time.</p>
-         <h2>Stories to follow</h2>${billLinks(bills)}<h2>A few words before you go</h2>${FAQ.map(({ question, answer }) => `<h3>${escapeHtml(question)}</h3><p>${escapeHtml(answer)}</p>`).join("")}`
+         <h2>Stories to follow</h2>${billLinks(bills)}<h2>A few words before you go</h2>${faqForMode(env.PAYPAL_MODE as PayPalMode).map(({ question, answer }) => `<h3>${escapeHtml(question)}</h3><p>${escapeHtml(answer)}</p>`).join("")}`
       : `<p>Read a story, claim a buck, and write what happens next. Holders play free.</p>${bills.length ? billLinks(bills) : `<p>The wild is quiet. <a href="/release">Release a buck</a> to start a story.</p>`}`;
   } else if (path === "/release") {
-    content = `<p>Four words to start it. Strangers write the story. You write the finale.</p><p>Release a buck for $2 in sandbox test money: $1 travels with the story and $1 supports the platform. Give it a prompt and send it to a friend or the wild.</p><p>Enable JavaScript to use the word counter and sandbox checkout.</p>`;
+    content = `<p>Four words to start it. Strangers write the story. You write the finale.</p><p>Release a buck for $2: $1 travels with the story and $1 supports the platform. Give it a prompt and send it to a friend or the wild.</p><p>Enable JavaScript to use the word counter and checkout.</p>`;
   } else if (INFO_PAGES[path]) {
     content = infoHtml(INFO_PAGES[path]);
   }
@@ -79,8 +87,8 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
   if (meta.noindex) headers.set("X-Robots-Tag", "noindex, nofollow");
   return new HTMLRewriter()
     .on("[data-seo]", { element: (el) => void el.remove() })
-    .on("head", { element: (el) => void el.append(renderHead(meta), { html: true }) })
-    .on("#root", { element: (el) => void el.setInnerContent(publicHtml(meta, content), { html: true }) })
+    .on("head", { element: (el) => void el.append(renderHead(meta, env.PAYPAL_MODE as PayPalMode), { html: true }) })
+    .on("#root", { element: (el) => void el.setInnerContent(publicHtml(meta, content, env.PAYPAL_MODE as PayPalMode), { html: true }) })
     .transform(new Response(index.body, { status, headers }));
 }
 

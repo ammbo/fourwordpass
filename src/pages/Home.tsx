@@ -1,10 +1,12 @@
+import { paymentNotice, payoutDescription } from "../../shared/payments";
+import { usePaymentMode } from "../paymentMode";
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { api, useLoad } from "../api";
 import { Banknote } from "../components/Banknote";
 import { BillCard } from "../components/BillCard";
 import { nf } from "../lib";
-import { BETA_NOTICE, FAQ } from "../../shared/site";
+import { faqForMode } from "../../shared/site";
 
 const DEMO_LINES = [
   "the robot learned to dream tonight",
@@ -14,7 +16,8 @@ const DEMO_LINES = [
 ];
 
 export function Home() {
-  const { data } = useLoad(api.home, []);
+  const mode = usePaymentMode();
+  const { data, error, reload } = useLoad(api.home, []);
   const [line, setLine] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setLine((l) => l + 1), 3200);
@@ -44,7 +47,7 @@ export function Home() {
             <Link href="/wild" className="btn btn-ghost !px-6 !py-3.5 !text-base">Join a story · free</Link>
           </div>
           <p className="mt-3 text-sm text-muted">No account, no app. About sixty seconds.</p>
-          <p className="mt-2 max-w-lg text-xs leading-relaxed text-muted">{BETA_NOTICE}</p>
+          <p className="mt-2 max-w-lg text-xs leading-relaxed text-muted">{paymentNotice(mode)}</p>
         </div>
         <div>
           <div className="relative">
@@ -62,6 +65,7 @@ export function Home() {
         </div>
       </section>
 
+      {error && <p role="alert" className="mx-auto max-w-6xl px-4 text-serial">Stories couldn’t load. {error} <button className="underline" onClick={reload}>Try again</button></p>}
       {/* ---------------------------------------------------------------- live counters */}
       <section className="border-y border-line bg-paper-3/60">
         <div className="mx-auto grid max-w-6xl grid-cols-2 gap-px px-4 sm:grid-cols-4">
@@ -90,7 +94,7 @@ export function Home() {
           {[
             ["01", "Write the foreword", "Start a story for $2: one dollar rides with the bill, one keeps the lights on. You write the first four words, then send it to someone or release it to the wild, a public list where any stranger can claim it."],
             ["02", "Add four words", "Whoever holds it adds exactly four words that count. Little words like the, a, to and of ride free, so grammar still works. AI can suggest; you choose what goes in."],
-            ["03", "Pass the buck", "Name the next holder by email, or release it to the wild. PayPal sends them the dollar, in sandbox test money for now. When it lands, your words join the story."],
+            ["03", "Pass the buck", `Name the next holder by email, or release it to the wild. ${payoutDescription(mode)} When it lands, your words join the story.`],
           ].map(([n, t, d]) => (
             <div key={n} className="card p-6">
               <div className="serial text-sm">{n}</div>
@@ -154,7 +158,7 @@ export function Home() {
         <div className="eyebrow">Good questions</div>
         <h2 id="faq-title" className="mt-2 font-display text-3xl font-semibold sm:text-4xl">A few words before you go.</h2>
         <div className="mt-6 divide-y divide-line border-y border-line">
-          {FAQ.map(({ question, answer }) => (
+          {faqForMode(mode).map(({ question, answer }) => (
             <details key={question} className="group py-5">
               <summary className="cursor-pointer font-display text-xl font-semibold">{question}</summary>
               <p className="mt-3 leading-relaxed text-ink-2">{answer}</p>

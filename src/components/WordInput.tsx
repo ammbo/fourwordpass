@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useId } from "react";
 import { CONTENT_WORDS, FINALE_MAX_CONTENT, checkFinale, checkFourWords } from "../../shared/words";
 
 type Props = {
@@ -15,6 +15,7 @@ export const WordInput = forwardRef<HTMLInputElement, Props>(function WordInput(
   { value, onChange, mode = "four", placeholder, autoFocus, touched },
   ref,
 ) {
+  const meterId = useId();
   const check = mode === "four" ? checkFourWords(value) : checkFinale(value);
   const target = mode === "four" ? CONTENT_WORDS : FINALE_MAX_CONTENT;
   const over = check.content > target;
@@ -34,7 +35,8 @@ export const WordInput = forwardRef<HTMLInputElement, Props>(function WordInput(
         enterKeyHint="next"
         maxLength={mode === "four" ? 90 : 200}
         className="field font-display !text-[1.35rem] !py-3.5"
-        aria-describedby="word-meter"
+        aria-describedby={meterId}
+        aria-label={mode === "four" ? "Your four content words" : "Your finale"}
       />
       <div className="mt-2.5 flex min-h-[26px] flex-wrap items-center gap-1.5" aria-hidden>
         {check.tokens.map((t, i) => (
@@ -50,7 +52,7 @@ export const WordInput = forwardRef<HTMLInputElement, Props>(function WordInput(
           </span>
         ))}
       </div>
-      <div id="word-meter" className="mt-2 flex items-center gap-3" aria-live="polite">
+      <div id={meterId} className="mt-2 flex items-center gap-3" aria-live="polite">
         {mode === "four" ? (
           <div className="flex gap-1.5">
             {Array.from({ length: CONTENT_WORDS }).map((_, i) => (
