@@ -1,8 +1,9 @@
 // Public projections. Emails, payout ids and ai_assisted flags never leave here.
 
-import type { BillSummary, CreatorView, HolderView, PublicBill, PublicHop, Receipt } from "../shared/types";
+import type { BillSummary, CreatorView, HolderView, PassFailure, PublicBill, PublicHop, Receipt } from "../shared/types";
 import { maskEmail } from "../shared/words";
 import { type BillRow, type HopRow, type PassRow, getPass, latestPendingPass, personalityOf } from "./db";
+import { TIMED_OUT } from "./engine";
 import { checkCap, maskId, placeFromRequest, placeLabel } from "./util";
 
 const SUGGESTIONS_PER_HOLDER = 5;
@@ -131,19 +132,17 @@ export async function holderView(env: Env, req: Request, bill: BillRow, token: s
       };
     }
     if (bill.status === "holding") {
-      const failed = await env.DB.prepare(
-        `SELECT p.recipient_email, p.error, h.words FROM passes p JOIN hops h ON h.id = p.from_hop_id
-         WHERE p.bill_id = ? AND p.kind = 'pass' AND p.status = 'failed' AND p.created_at > ? ORDER BY p.created_at DESC LIMIT 1`,
-      ).bind(bill.id, bill.holder_since ?? 0).first<{ recipient_email: string; error: string | null; words: string }>();
       const place = placeFromRequest(req);
       return {
         state: "holding",
         followerCount: bill.follower_count,
         suggestionsLeft: Math.max(0, SUGGESTIONS_PER_HOLDER - holderPass.suggest_count),
         place: { city: place.city, region: place.region, country: place.country },
-        lastFailure: failed ? { recipient: maskEmail(failed.recipient_email), error: failed.error ?? "Payment failed", words: failed.words } : null,
+        lastFailure: await lastFailure(env, bill),
         viaWild: !!bill.held_via_wild,
         holderSince: bill.holder_since ?? Date.now(),
+        returnedBy: await returnedBy(env, bill),
+        sendBackTo: holderPass.kind === "claim" ? "wild" : "sender",
       };
     }
   }
@@ -158,13 +157,32 @@ export async function holderView(env: Env, req: Request, bill: BillRow, token: s
 
 export async function creatorView(env: Env, bill: BillRow, token: string): Promise<CreatorView> {
   if (!(await checkCap(env, "creator", bill.id, token))) return { valid: false };
+  // Back in the creator's hands: the first holder sent it back.
+  const withCreator = bill.status === "holding" && !bill.holder_pass_id && !!bill.returned_pass_id;
   return {
     valid: true,
     canEnd: bill.status === "holding" || bill.status === "wild",
     status: bill.status,
     hopCount: bill.hop_count,
     goalHops: bill.goal_hops,
+    returnedBy: withCreator ? await returnedBy(env, bill) : null,
+    lastFailure: withCreator ? await lastFailure(env, bill) : null,
   };
+}
+
+/** The latest pass from whoever holds the bill now that didn't land. */
+async function lastFailure(env: Env, bill: BillRow): Promise<PassFailure | null> {
+  const failed = await env.DB.prepare(
+    `SELECT p.recipient_email, p.error, h.words FROM passes p LEFT JOIN hops h ON h.id = p.from_hop_id
+     WHERE p.bill_id = ? AND p.kind = 'pass' AND p.status = 'failed' AND p.created_at > ? ORDER BY p.created_at DESC LIMIT 1`,
+  ).bind(bill.id, bill.holder_since ?? 0).first<{ recipient_email: string; error: string | null; words: string | null }>();
+  if (!failed) return null;
+  return { recipient: maskEmail(failed.recipient_email), error: failed.error ?? "Payment failed", words: failed.words ?? "", timedOut: failed.error === TIMED_OUT };
+}
+
+async function returnedBy(env: Env, bill: BillRow): Promise<string | null> {
+  const declined = bill.returned_pass_id ? await getPass(env, bill.returned_pass_id) : null;
+  return declined ? maskEmail(declined.recipient_email) : null;
 }
 
 export { SUGGESTIONS_PER_HOLDER };

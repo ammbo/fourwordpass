@@ -19,6 +19,7 @@ export type Mail = {
   quote?: string;            // a slice of the story
   quoteLabel?: string;
   button?: { label: string; url: string };
+  secondary?: { label: string; url: string };   // a quieter second choice under the button
   footer?: string;
   unsubscribeUrl?: string;
 };
@@ -41,6 +42,9 @@ function renderHtml(m: Mail): string {
        </td></tr></table>
        <div style="font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d;word-break:break-all">${esc(m.button.url)}</div>`
     : "";
+  const secondary = m.secondary
+    ? `<p style="margin:14px 0 0;font:14px/1.5 Helvetica,Arial,sans-serif"><a href="${esc(m.secondary.url)}" style="color:#17402f">${esc(m.secondary.label)}</a></p>`
+    : "";
   const preheader = m.preheader ?? m.paragraphs[0] ?? "";
   const image = m.image
     ? `<a href="${SITE_URL}" style="display:block;margin:0 0 20px"><img src="${SHARE_IMAGE}" width="496" alt="One dollar. Many strangers. One story. Add four words. Pass it on." style="display:block;width:100%;max-width:496px;height:auto;border:0;border-radius:8px"></a>`
@@ -56,7 +60,7 @@ ${m.image ? "" : `<a href="${SITE_URL}" style="display:block;max-width:560px;mar
 <tr><td style="padding:6px"><div style="border:2px solid #17402f;border-radius:10px;padding:26px 24px">
 ${image}${m.serial ? `<div style="font:700 13px/1 'Courier New',monospace;letter-spacing:.18em;color:#b3261e">${esc(m.serial)}</div>` : ""}
 <h1 style="margin:14px 0 16px;font:700 26px/1.2 Georgia,serif;color:#17402f">${esc(m.heading)}</h1>
-${p}${quote}${button}
+${p}${quote}${button}${secondary}
 ${m.footer ? `<p style="margin:20px 0 0;font:13px/1.5 Helvetica,Arial,sans-serif;color:#5d6f63">${esc(m.footer)}</p>` : ""}
 </div></td></tr></table>
 <div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}<br>Sandbox beta: test money, real app emails.<br>${INFO_LINKS.map(({ path, label }) => `<a href="${SITE_URL}${path}" style="color:#7a857d">${label}</a>`).join(" · ")}</div>
@@ -70,6 +74,7 @@ function renderText(m: Mail): string {
     ...m.paragraphs.flatMap((p) => [p, ""]),
     m.quote ? `${m.quoteLabel ? `${m.quoteLabel}: ` : ""}"${m.quote}"\n` : "",
     m.button ? `${m.button.label}: ${m.button.url}\n` : "",
+    m.secondary ? `${m.secondary.label}: ${m.secondary.url}\n` : "",
     m.footer ?? "",
     m.unsubscribeUrl ? `\nChange or stop these emails: ${m.unsubscribeUrl}` : "",
     "\n— Four Word Pass",

@@ -94,9 +94,13 @@ export type HolderView =
       followerCount: number;
       suggestionsLeft: number;
       place: { city: string | null; region: string | null; country: string | null };
-      lastFailure: { recipient: string; error: string; words: string } | null;
+      lastFailure: PassFailure | null;
       viaWild: boolean;
       holderSince: number;
+      /** Set when the bill came back to you: the person you passed it to sent it back. Your words are already in. */
+      returnedBy: string | null;   // masked
+      /** Where it goes if you send it back: whoever passed it to you, or the wild if you claimed it. */
+      sendBackTo: "sender" | "wild";
     }
   | {
       state: "in_transit";
@@ -106,9 +110,21 @@ export type HolderView =
       words: string;
     };
 
+/** The latest payout that didn't reach the person you picked. */
+export type PassFailure = { recipient: string; error: string; words: string; timedOut: boolean };
+
 export type CreatorView =
   | { valid: false }
-  | { valid: true; canEnd: boolean; status: BillStatus; hopCount: number; goalHops: number | null };
+  | {
+      valid: true;
+      canEnd: boolean;
+      status: BillStatus;
+      hopCount: number;
+      goalHops: number | null;
+      /** Set when your first holder sent the bill back to you: pick someone new. */
+      returnedBy: string | null;
+      lastFailure: PassFailure | null;
+    };
 
 export type AppConfig = {
   paypalMode: PayPalMode;

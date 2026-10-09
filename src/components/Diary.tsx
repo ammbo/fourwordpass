@@ -3,7 +3,7 @@ import type { PublicDiary } from "../../shared/types";
 
 const PREVIEW = 3;
 
-const KIND_MARK: Record<string, string> = { birth: "✦", hop: "→", stall: "…", wild: "⟿", goal: "★", finale: "∎", death: "✝" };
+const KIND_MARK: Record<string, string> = { birth: "✦", hop: "→", stall: "…", wild: "⟿", returned: "↩", goal: "★", finale: "∎", death: "✝" };
 
 /** The bill's own voice. Always labeled; never part of the story, and quieter than it. */
 export function Diary({ entries, persona }: { entries: PublicDiary[]; persona: string }) {

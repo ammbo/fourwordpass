@@ -7,6 +7,8 @@
 //    (webhook or poll), or you release the bill into the wild (the platform holds
 //    the dollar until someone claims it). Until then, they're pending.
 //  - You hold the buck only once your dollar has landed.
+//  - Don't want it? Send it back: it returns to whoever passed it to you (the creator,
+//    for a first hand-off), and they pick someone else. Their words are already in.
 //
 // All transitions are conditional UPDATEs, so duplicate webhooks, racing polls
 // and double-clicks are no-ops.
@@ -18,8 +20,8 @@ import * as ai from "./ai";
 import { type BillRow, type HopRow, type PassRow, getBill, getHop, getPass, personalityOf, storyTail, touch } from "./db";
 import { sendMail } from "./email";
 import { DIRTY_MESSAGE, isClean } from "./moderation";
-import { DELIVERED, FAILED, type PayoutState, captureOrder, createPayout, getPayout, paypalMode } from "./paypal";
-import { DAY, type Place, appUrl, capToken, newId, now, placeLabel, sleep } from "./util";
+import { DELIVERED, FAILED, type PayoutState, captureOrder, createPayout, getPayout, isDuplicateBatch, isTransient, paypalMode } from "./paypal";
+import { DAY, HOUR, type Place, appUrl, capToken, newId, now, placeLabel, sleep } from "./util";
 
 export class UserError extends Error {
   constructor(message: string, public status = 400) {
@@ -179,7 +181,7 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
 
   const creatorToken = await capToken(env, "creator", billId);
   if (firstRecipient) {
-    await startPass(env, ctx, bill, { kind: parent ? "fork" : "mint", email: firstRecipient, fromHopId: hopId });
+    await startPass(env, ctx, bill, { kind: parent ? "fork" : "mint", email: firstRecipient, fromHopId: hopId, senderPassId: null });
   } else {
     await releaseToWild(env, ctx, bill, hopId, null);
   }
@@ -210,50 +212,85 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
 
 // ====================================================================== passes (money)
 
-async function startPass(env: Env, ctx: Ctx, bill: BillRow, p: { kind: PassRow["kind"]; email: string; fromHopId: string | null }): Promise<PassRow> {
+/** A payout PayPal hasn't settled by now fails, so a stuck payout can't freeze a bill. */
+const PASS_TIMEOUT = 2 * HOUR;
+export const TIMED_OUT = "PayPal didn't confirm this payout in time.";
+
+async function startPass(
+  env: Env,
+  ctx: Ctx,
+  bill: BillRow,
+  p: { kind: PassRow["kind"]; email: string; fromHopId: string | null; senderPassId: string | null },
+): Promise<PassRow> {
   const passId = newId();
   const t = now();
   const mode = paypalMode(env);
   await env.DB.prepare(
-    "INSERT INTO passes (id, bill_id, kind, recipient_email, from_hop_id, status, paypal_mode, next_poll_at, created_at) VALUES (?,?,?,?,?,'pending',?,?,?)",
-  ).bind(passId, bill.id, p.kind, p.email, p.fromHopId, mode, t + 3000, t).run();
-
-  const n = bill.hop_count + (p.fromHopId ? 1 : 0);
-  const url = appUrl(env, `/b/${bill.serial}`).replace(/^https?:\/\//, "");
+    "INSERT INTO passes (id, bill_id, kind, recipient_email, from_hop_id, sender_pass_id, status, paypal_mode, next_poll_at, created_at) VALUES (?,?,?,?,?,?,'pending',?,?,?)",
+  ).bind(passId, bill.id, p.kind, p.email, p.fromHopId, p.senderPassId, mode, t + 3000, t).run();
+  const pass = (await getPass(env, passId))!;
   try {
-    const { batchId } = await createPayout(env, {
-      passId,
-      email: p.email,
-      subject: `${bill.serial} is yours`,
-      message: `A dollar with a story just landed. Add your four words and pass it on: ${url}`,
-      note: `${bill.serial} is yours. ${n} ${n === 1 ? "stranger is" : "strangers are"} writing its story.\nAdd your 4 words: ${url}`,
-    });
-    await env.DB.prepare("UPDATE passes SET payout_batch_id = ?, paypal_status = 'PENDING' WHERE id = ?").bind(batchId, passId).run();
+    await sendPayout(env, bill, pass);
   } catch (e) {
-    const pass = (await getPass(env, passId))!;
-    await failPass(env, ctx, pass, { status: "FAILED", itemId: null, transactionId: null, error: (e as Error).message });
-    throw new UserError(`PayPal couldn't send to that address: ${(e as Error).message}`);
+    if (!isTransient(e)) {
+      await failPass(env, ctx, pass, { status: "FAILED", itemId: null, transactionId: null, error: (e as Error).message });
+      throw new UserError(`PayPal couldn't send to that address: ${(e as Error).message}`);
+    }
+    // A PayPal hiccup isn't the recipient's fault. The pass stays in flight and gets retried.
+    await env.DB.prepare("UPDATE passes SET error = ? WHERE id = ?").bind((e as Error).message, passId).run();
   }
   ctx.waitUntil(quickPoll(env, ctx, passId));
   return (await getPass(env, passId))!;
 }
 
-/** Sandbox payouts usually settle in seconds. Poll right away so the handoff feels live. */
+/** Safe to repeat: the pass id is the sender_batch_id, and PayPal won't accept a second batch with it. */
+async function sendPayout(env: Env, bill: BillRow, pass: PassRow) {
+  const n = bill.hop_count + (pass.from_hop_id ? 1 : 0);
+  const url = appUrl(env, `/b/${bill.serial}`).replace(/^https?:\/\//, "");
+  const { batchId } = await createPayout(env, {
+    passId: pass.id,
+    email: pass.recipient_email,
+    since: pass.created_at,
+    subject: `${bill.serial} is yours`,
+    message: `A dollar with a story just landed. Add your four words and pass it on: ${url}`,
+    note: `${bill.serial} is yours. ${n} ${n === 1 ? "stranger is" : "strangers are"} writing its story.\nAdd your 4 words: ${url}`,
+  });
+  await env.DB.prepare("UPDATE passes SET payout_batch_id = ?, paypal_status = 'PENDING', error = NULL WHERE id = ? AND status = 'pending'")
+    .bind(batchId, pass.id)
+    .run();
+}
+
+/** Sandbox payouts usually settle in seconds. Poll right away so the handoff feels live, and retry a hiccup quickly. */
 async function quickPoll(env: Env, ctx: Ctx, passId: string) {
   for (const wait of [3000, 3000, 4000, 6000, 8000]) {
     await sleep(wait);
     const pass = await getPass(env, passId);
     if (!pass || pass.status !== "pending") return;
-    await pollPass(env, ctx, pass).catch((e) => console.error("poll failed", e));
+    await advancePass(env, ctx, pass).catch((e) => console.error("poll failed", e));
   }
 }
 
-export async function pollPass(env: Env, ctx: Ctx, pass: PassRow) {
-  if (!pass.payout_batch_id) return;
-  const state = await getPayout(env, pass.payout_batch_id);
+/** Move an in-flight pass along: retry the payout if PayPal hiccuped, otherwise poll it. Gives up after PASS_TIMEOUT. */
+export async function advancePass(env: Env, ctx: Ctx, pass: PassRow) {
   const backoff = Math.min(15 * 60_000, 30_000 * 2 ** Math.max(0, pass.poll_count - 4));
   await env.DB.prepare("UPDATE passes SET poll_count = poll_count + 1, next_poll_at = ? WHERE id = ?").bind(now() + backoff, pass.id).run();
-  await applyPayoutState(env, ctx, pass, state);
+  try {
+    if (pass.payout_batch_id) await applyPayoutState(env, ctx, pass, await getPayout(env, pass.payout_batch_id));
+    else await sendPayout(env, (await getBill(env, pass.bill_id))!, pass);
+  } catch (e) {
+    // A failed poll, or a retry that hit another hiccup, tries again later. A duplicate batch
+    // means an earlier attempt reached PayPal after all, and its webhook will settle the pass.
+    if (!pass.payout_batch_id && !isTransient(e) && !isDuplicateBatch(e)) {
+      return failPass(env, ctx, pass, { status: "FAILED", itemId: null, transactionId: null, error: (e as Error).message });
+    }
+    await env.DB.prepare("UPDATE passes SET error = ? WHERE id = ? AND status = 'pending'").bind((e as Error).message, pass.id).run();
+  }
+  if (now() - pass.created_at > PASS_TIMEOUT) {
+    const latest = await getPass(env, pass.id);
+    if (latest?.status === "pending") {
+      await failPass(env, ctx, latest, { status: latest.paypal_status ?? "FAILED", itemId: null, transactionId: null, error: TIMED_OUT });
+    }
+  }
 }
 
 export async function applyPayoutState(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState) {
@@ -278,7 +315,7 @@ async function deliverPass(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState
   if (pass.from_hop_id) stmts.push(confirmHopStmt(env, pass.from_hop_id, pass.bill_id));
   stmts.push(
     env.DB.prepare(
-      `UPDATE bills SET status = 'holding', holder_pass_id = ?, holder_since = ?, held_via_wild = ?, wild_since = NULL, nag_level = 0
+      `UPDATE bills SET status = 'holding', holder_pass_id = ?, holder_since = ?, held_via_wild = ?, wild_since = NULL, nag_level = 0, returned_pass_id = NULL
        WHERE id = ? AND status = 'in_transit'`,
     ).bind(pass.id, t, pass.kind === "claim" ? 1 : 0, pass.bill_id),
     recountStmt(env, pass.bill_id),
@@ -296,26 +333,28 @@ async function failPass(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState) {
   const bill = (await getBill(env, pass.bill_id))!;
 
   if (pass.kind === "pass") {
-    // The holder keeps the bill and their words; they pick someone else.
+    // The sender keeps the bill (and the words riding on the payout, if any) and picks someone else.
     await env.DB.batch([
       env.DB.prepare("UPDATE hops SET status = 'void' WHERE id = ? AND status = 'pending'").bind(pass.from_hop_id),
       env.DB.prepare("UPDATE bills SET status = 'holding' WHERE id = ? AND status = 'in_transit'").bind(bill.id),
       touch(env, bill.id),
     ]);
-    const holderPass = bill.holder_pass_id ? await getPass(env, bill.holder_pass_id) : null;
-    if (holderPass) {
+    const keeper = await keeperOf(env, bill);
+    if (keeper) {
+      const who = maskEmail(pass.recipient_email);
+      const timedOut = state.error === TIMED_OUT;
       ctx.waitUntil(
         sendMail(env, {
-          to: holderPass.recipient_email,
+          to: keeper.email,
           kind: "pass_failed",
           billId: bill.id,
           serial: bill.serial,
-          subject: `${personalityOf(bill).name} couldn't reach ${maskEmail(pass.recipient_email)}`,
+          subject: `${personalityOf(bill).name} couldn't reach ${who}`,
           heading: "Still in your pocket.",
           paragraphs: [
-            `PayPal couldn't deliver me to ${maskEmail(pass.recipient_email)}, so your words are on hold. Pick someone else, or release me into the wild.`,
+            `${timedOut ? `PayPal never confirmed the payout to ${who}` : `PayPal couldn't deliver me to ${who}`}, so ${pass.from_hop_id ? "your words are on hold" : "I'm still with you"}. ${timedOut ? "Try them again, pick" : "Pick"} someone else, or release me into the wild.`,
           ],
-          button: { label: "Pass me to someone else", url: appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", holderPass.id)}`) },
+          button: { label: "Pass me to someone else", url: keeper.url },
         }),
       );
     }
@@ -353,7 +392,7 @@ async function releaseToWild(env: Env, ctx: Ctx, bill: BillRow, hopId: string | 
   if (hopId) stmts.push(confirmHopStmt(env, hopId, bill.id));
   stmts.push(
     env.DB.prepare(
-      `UPDATE bills SET status = 'wild', wild_since = ?, holder_pass_id = NULL, holder_since = NULL, held_via_wild = 0, nag_level = 0
+      `UPDATE bills SET status = 'wild', wild_since = ?, holder_pass_id = NULL, holder_since = NULL, held_via_wild = 0, nag_level = 0, returned_pass_id = NULL
        WHERE id = ? AND status = ? AND (? IS NULL OR holder_pass_id = ?)`,
     ).bind(t, bill.id, fromStatus, holderPassId, holderPassId),
     recountStmt(env, bill.id),
@@ -382,6 +421,7 @@ async function emailHolder(env: Env, pass: PassRow, resend = false) {
   const tail = await storyTail(env, bill.id, 30);
   const places = await env.DB.prepare("SELECT COUNT(DISTINCT city) AS n FROM hops WHERE bill_id = ? AND status = 'confirmed' AND city IS NOT NULL").bind(bill.id).first<{ n: number }>();
   const n = bill.hop_count;
+  const url = appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`);
   // A claimer chose this bill on the site. Anyone else was named by the last holder and may never have heard of us.
   const claimed = pass.kind === "claim";
   const signedAs = !claimed && pass.from_hop_id ? (await getHop(env, pass.from_hop_id))?.pen_name : null;
@@ -411,11 +451,24 @@ async function emailHolder(env: Env, pass: PassRow, resend = false) {
     ],
     quote: tail || undefined,
     quoteLabel: tail ? "The story so far" : undefined,
-    button: { label: "Add your 4 words", url: appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`) },
+    button: { label: "Add your 4 words", url },
+    secondary: { label: claimed ? "Changed your mind? Put me back in the wild" : "Not for you? Send me back", url: `${url}&decline=1` },
     footer: claimed
       ? "You claimed me from the wild. You have 24 hours before I wander back out."
-      : "Not your thing? Open the link and release me to the wild, so a stranger can carry me on. If you just sit on me, I get needy.",
+      : "Not your thing? Send me back, and whoever passed me to you will pick someone else. If you just sit on me, I get needy.",
   });
+}
+
+/** Whoever can move a bill that's sitting still: its holder, or its creator when it came back to them. */
+async function keeperOf(env: Env, bill: BillRow): Promise<{ email: string; url: string } | null> {
+  if (bill.holder_pass_id) {
+    const pass = await getPass(env, bill.holder_pass_id);
+    return pass && { email: pass.recipient_email, url: appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`) };
+  }
+  if (bill.returned_pass_id && bill.creator_email) {
+    return { email: bill.creator_email, url: appUrl(env, `/b/${bill.serial}?c=${await capToken(env, "creator", bill.id)}`) };
+  }
+  return null;
 }
 
 export async function resendHolderLink(env: Env, bill: BillRow) {
@@ -510,6 +563,7 @@ export type ContributeInput = {
 
 export async function contribute(env: Env, ctx: Ctx, place: Place, bill: BillRow, input: ContributeInput) {
   if (bill.status !== "holding" || !bill.holder_pass_id) throw new UserError("This buck has moved on.", 409);
+  if (bill.returned_pass_id) throw new UserError("Your words are already in. Pick someone new, or release it to the wild.", 409);
   const holderPass = (await getPass(env, bill.holder_pass_id))!;
   const words = validateWords(input.words);
   const note = validateShort(input.note, 140, "Your note");
@@ -540,7 +594,7 @@ export async function contribute(env: Env, ctx: Ctx, place: Place, bill: BillRow
     await env.DB.prepare("UPDATE hops SET status = 'void' WHERE id = ?").bind(hopId).run();
     throw new UserError("This buck has moved on.", 409);
   }
-  await startPass(env, ctx, bill, { kind: "pass", email: next, fromHopId: hopId });
+  await startPass(env, ctx, bill, { kind: "pass", email: next, fromHopId: hopId, senderPassId: holderPass.id });
   return { state: "in_transit" as const };
 }
 
@@ -548,8 +602,94 @@ export async function claimFromWild(env: Env, ctx: Ctx, bill: BillRow, emailIn: 
   const email = validateEmail(emailIn, "Your email");
   const res = await env.DB.prepare("UPDATE bills SET status = 'in_transit', version = version + 1 WHERE id = ? AND status = 'wild'").bind(bill.id).run();
   if (!res.meta.changes) throw new UserError("Someone beat you to it.", 409);
-  const pass = await startPass(env, ctx, bill, { kind: "claim", email, fromHopId: null });
+  const pass = await startPass(env, ctx, bill, { kind: "claim", email, fromHopId: null, senderPassId: null });
   return { token: await capToken(env, "holder", pass.id) };
+}
+
+// ====================================================================== sending it back
+
+/** Who a holder would send the bill back to: a holder's pass, the creator (passId null), or nobody (null: the wild). */
+async function senderOf(env: Env, bill: BillRow, pass: PassRow): Promise<{ passId: string | null } | null> {
+  if (pass.kind === "claim") return null;
+  if (pass.sender_pass_id) return { passId: pass.sender_pass_id };
+  // Passes made before senders were recorded: the writer of the words that rode on it.
+  const hop = pass.from_hop_id ? await getHop(env, pass.from_hop_id) : null;
+  if (hop?.received_pass_id) return { passId: hop.received_pass_id };
+  return bill.creator_email ? { passId: null } : null;
+}
+
+/**
+ * The holder doesn't want it. It goes back to whoever passed it to them, who picks someone
+ * else (their words are already in). A claimer puts it back in the wild.
+ */
+export async function declineBill(env: Env, ctx: Ctx, bill: BillRow): Promise<{ state: "returned" | "wild" }> {
+  if (bill.status !== "holding" || !bill.holder_pass_id) throw new UserError("This buck has moved on.", 409);
+  if (bill.returned_pass_id) throw new UserError("Your words are already in. Pick someone new, or release it to the wild.", 409);
+  const pass = (await getPass(env, bill.holder_pass_id))!;
+  const sender = await senderOf(env, bill, pass);
+  const t = now();
+  const res = await (sender
+    ? env.DB.prepare(
+        `UPDATE bills SET holder_pass_id = ?, holder_since = ?, held_via_wild = 0, nag_level = 0, returned_pass_id = ?, version = version + 1
+         WHERE id = ? AND status = 'holding' AND holder_pass_id = ?`,
+      ).bind(sender.passId, t, pass.id, bill.id, pass.id)
+    : env.DB.prepare(
+        `UPDATE bills SET status = 'wild', wild_since = ?, holder_pass_id = NULL, holder_since = NULL, held_via_wild = 0, nag_level = 0, version = version + 1
+         WHERE id = ? AND status = 'holding' AND holder_pass_id = ?`,
+      ).bind(t, bill.id, pass.id)
+  ).run();
+  if (!res.meta.changes) throw new UserError("This buck has moved on.", 409);
+  await env.DB.prepare("UPDATE passes SET declined_at = ? WHERE id = ?").bind(t, pass.id).run();
+  const after = (await getBill(env, bill.id))!;
+  if (!sender) {
+    await addDiary(env, after, "wild", "Picked up, looked over, put back. Into the wild again.");
+    return { state: "wild" };
+  }
+  await addDiary(env, after, "returned", "Sent back unopened. Back to the last hands that wanted me.");
+  const keeper = await keeperOf(env, after);
+  if (keeper) {
+    const who = maskEmail(pass.recipient_email);
+    ctx.waitUntil(
+      sendMail(env, {
+        to: keeper.email,
+        kind: "returned",
+        billId: bill.id,
+        serial: bill.serial,
+        subject: `${personalityOf(after).name} came back`,
+        preheader: `${who} passed. Pick someone else, and your words keep traveling.`,
+        heading: "I'm back.",
+        paragraphs: [
+          `${who} sent me back, so I came home to you. ${sender.passId ? "Your four words are" : "Your foreword is"} still in the story; I just need new hands.`,
+          "Pick someone else, or release me into the wild for a stranger to claim.",
+        ],
+        button: { label: "Pass me to someone else", url: keeper.url },
+        footer: "If you just sit on me, I get needy.",
+      }),
+    );
+  }
+  return { state: "returned" };
+}
+
+/** A bill came back to its sender. They pass it on again with no new words, or release it to the wild. */
+export async function repass(env: Env, ctx: Ctx, bill: BillRow, nextIn: string | null): Promise<{ state: "wild" | "in_transit" }> {
+  if (bill.status !== "holding" || !bill.returned_pass_id) throw new UserError("This buck has moved on.", 409);
+  if (!nextIn) {
+    await releaseToWild(env, ctx, bill, null, bill.holder_pass_id, "holding");
+    const after = await getBill(env, bill.id);
+    if (after?.status !== "wild") throw new UserError("This buck has moved on.", 409);
+    return { state: "wild" };
+  }
+  const next = validateEmail(nextIn, "The next person's email");
+  const holderPass = bill.holder_pass_id ? await getPass(env, bill.holder_pass_id) : null;
+  if (next === (holderPass?.recipient_email ?? bill.creator_email)) throw new UserError("You can't pass it to yourself. Nice try.");
+  const declined = await getPass(env, bill.returned_pass_id);
+  if (next === declined?.recipient_email) throw new UserError("They already sent it back. Pick someone else.");
+  const moved = await env.DB.prepare("UPDATE bills SET status = 'in_transit', version = version + 1 WHERE id = ? AND status = 'holding' AND returned_pass_id = ?")
+    .bind(bill.id, bill.returned_pass_id)
+    .run();
+  if (!moved.meta.changes) throw new UserError("This buck has moved on.", 409);
+  await startPass(env, ctx, bill, { kind: "pass", email: next, fromHopId: null, senderPassId: bill.holder_pass_id });
+  return { state: "in_transit" };
 }
 
 // ====================================================================== endings
@@ -564,7 +704,7 @@ export async function writeCreatorFinale(env: Env, ctx: Ctx, bill: BillRow, word
   if (!check.ok) throw new UserError(check.error!);
   if (!isClean(words)) throw new UserError(DIRTY_MESSAGE);
   const res = await env.DB.prepare(
-    `UPDATE bills SET status = 'complete', finale_text = ?, finale_by = 'creator', ended_at = ?, holder_pass_id = NULL, version = version + 1
+    `UPDATE bills SET status = 'complete', finale_text = ?, finale_by = 'creator', ended_at = ?, holder_pass_id = NULL, returned_pass_id = NULL, version = version + 1
      WHERE id = ? AND status IN ('holding', 'wild')`,
   ).bind(words, now(), bill.id).run();
   if (!res.meta.changes) throw new UserError("This story just changed. Refresh and try again.", 409);
@@ -599,7 +739,7 @@ export async function writeBillsOwnEnding(env: Env, bill: BillRow) {
   });
   const res = await env.DB.prepare(
     `UPDATE bills SET status = 'eulogized', eulogy = ?, finale_text = ?, finale_by = CASE WHEN ? IS NULL THEN NULL ELSE 'bill' END,
-       ended_at = ?, holder_pass_id = NULL, version = version + 1
+       ended_at = ?, holder_pass_id = NULL, returned_pass_id = NULL, version = version + 1
      WHERE id = ? AND status IN ('holding', 'wild')`,
   ).bind(e.eulogy, e.closing, e.closing, now(), bill.id).run();
   if (!res.meta.changes) return;
@@ -612,22 +752,25 @@ export async function writeBillsOwnEnding(env: Env, bill: BillRow) {
 
 export async function nag(env: Env, bill: BillRow, level: 1 | 2 | 3) {
   const res = await env.DB.prepare("UPDATE bills SET nag_level = ? WHERE id = ? AND nag_level < ? AND status = 'holding'").bind(level, bill.id, level).run();
-  if (!res.meta.changes || !bill.holder_pass_id) return;
-  const pass = await getPass(env, bill.holder_pass_id);
-  if (!pass) return;
+  if (!res.meta.changes) return;
+  const keeper = await keeperOf(env, bill);
+  if (!keeper) return;
+  // A bill that came back already has its keeper's words; it only needs new hands.
+  const returned = !!bill.returned_pass_id;
   const pers = personalityOf(bill);
   const placeRow = await env.DB.prepare("SELECT city, region, country FROM hops WHERE bill_id = ? AND status = 'confirmed' ORDER BY idx DESC LIMIT 1").bind(bill.id).first<{ city: string | null; region: string | null; country: string | null }>();
   const place = placeRow ? placeLabel(placeRow) : "a pocket somewhere";
-  const n = await ai.writeNag(env, { pers, serial: bill.serial, level, place, followers: bill.follower_count, storyTail: await storyTail(env, bill.id, 30) });
+  const n = await ai.writeNag(env, { pers, serial: bill.serial, level, place, followers: bill.follower_count, storyTail: await storyTail(env, bill.id, 30), returned });
   await sendMail(env, {
-    to: pass.recipient_email,
+    to: keeper.email,
     kind: `nag${level}`,
     billId: bill.id,
     serial: bill.serial,
     subject: `${pers.name}: ${n.subject}`,
     heading: n.subject,
     paragraphs: [n.body, bill.follower_count > 1 ? `${bill.follower_count} people are watching me. No pressure.` : ""].filter(Boolean),
-    button: { label: "Add your 4 words", url: appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`) },
+    button: { label: returned ? "Pick someone new" : "Add your 4 words", url: keeper.url },
+    ...(returned ? {} : { secondary: { label: "Not for you? Send me back", url: `${keeper.url}&decline=1` } }),
   });
   if (level >= 2) await addDiary(env, bill, "stall", n.publicNote, { meta: n.meta });
   if (level === 3) await notifyFollowers(env, bill, "stall", { note: n.publicNote });

@@ -17,12 +17,16 @@ async function safely(label: string, fn: () => Promise<unknown>) {
 export async function runCron(env: Env, ctx: Ctx) {
   const t = now();
 
-  // 1. Fallback polling for payouts the webhook hasn't settled.
+  // 1. Payouts in flight: poll the ones the webhook hasn't settled, retry the ones a PayPal
+  //    hiccup stopped (left alone for 30s so a slow first attempt isn't raced), and fail any
+  //    that are stuck past the timeout.
   await safely("poll", async () => {
     const { results } = await env.DB.prepare(
-      "SELECT * FROM passes WHERE status = 'pending' AND payout_batch_id IS NOT NULL AND next_poll_at <= ? ORDER BY next_poll_at LIMIT 25",
+      `SELECT * FROM passes WHERE status = 'pending' AND next_poll_at <= ?1
+         AND (payout_batch_id IS NOT NULL OR created_at < ?1 - 30000)
+       ORDER BY next_poll_at LIMIT 25`,
     ).bind(t).all<PassRow>();
-    for (const p of results) await safely(`poll:${p.id}`, () => engine.pollPass(env, ctx, p));
+    for (const p of results) await safely(`poll:${p.id}`, () => engine.advancePass(env, ctx, p));
   });
 
   // 2. Side effects that waitUntil didn't finish (holder email, diary, followers, stamp).

@@ -29,6 +29,7 @@ export type BillRow = {
   featured: number;
   is_seed: number;
   checkout_order_id: string | null;
+  returned_pass_id: string | null;
   version: number;
   created_at: number;
   ended_at: number | null;
@@ -51,6 +52,8 @@ export type PassRow = {
   next_poll_at: number | null;
   holder_notified: number;
   suggest_count: number;
+  sender_pass_id: string | null;
+  declined_at: number | null;
   created_at: number;
   settled_at: number | null;
 };

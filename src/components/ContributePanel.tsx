@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { HolderView, PublicBill } from "../../shared/types";
+import type { HolderView, PassFailure, PublicBill } from "../../shared/types";
 import { checkFourWords, isEmail, maskEmail } from "../../shared/words";
 import { api } from "../api";
 import { FollowBox } from "./FollowBox";
@@ -12,12 +12,28 @@ type Props = { bill: PublicBill; token: string; onDone: () => void };
 const placeText = (p: { city: string | null; region: string | null; country: string | null }) =>
   p.city ? `${p.city}${p.region && p.country === "US" ? `, ${p.region}` : ""}` : p.country ?? null;
 
+const failureText = (f: PassFailure) =>
+  f.timedOut
+    ? `PayPal never confirmed the payout to ${f.recipient}. Try them again, pick someone else, or release it into the wild.`
+    : `PayPal couldn't deliver to ${f.recipient}. Pick someone else, or release it into the wild.`;
+
 /** Email link → read → four words → pass. The whole loop, built to take under a minute on a phone. */
 export function ContributePanel({ bill, token, onDone }: Props) {
   const [view, setView] = useState<HolderView | null>(null);
   const [sentTo, setSentTo] = useState<"wild" | "someone" | null>(null);
   const [landed, setLanded] = useState(false);
+  const [declined, setDeclined] = useState<"returned" | "wild" | null>(null);
+  // Emails link "Not for you? Send it back" here with ?decline=1.
+  const [wantsDecline] = useState(() => new URLSearchParams(location.search).has("decline"));
   const prevState = useRef<string | null>(null);
+  const transitWords = useRef("");
+
+  useEffect(() => {
+    const url = new URL(location.href);
+    if (!url.searchParams.has("decline")) return;
+    url.searchParams.delete("decline");
+    history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+  }, []);
 
   // Poll faster while money is moving.
   useEffect(() => {
@@ -27,6 +43,7 @@ export function ContributePanel({ bill, token, onDone }: Props) {
         const v = await api.holder(bill.serial, token);
         if (!alive) return;
         if ((prevState.current === "in_transit" || sentTo === "someone") && v.state === "moved_on") setLanded(true);
+        if (v.state === "in_transit") transitWords.current = v.words;
         prevState.current = v.state;
         setView(v);
       } catch {
@@ -45,15 +62,34 @@ export function ContributePanel({ bill, token, onDone }: Props) {
 
   if (!view) return <PanelShell><div className="h-40 animate-pulse-soft rounded-xl bg-paper-2" /></PanelShell>;
 
+  if (declined) {
+    return (
+      <PanelShell>
+        <div className="eyebrow">{bill.serial}</div>
+        <h2 className="mt-1 font-display text-3xl font-semibold">{declined === "wild" ? "Back in the wild." : "Sent back. Thanks for looking."}</h2>
+        <p className="mt-1 text-muted">
+          {declined === "wild"
+            ? "Someone else can claim it now. The story's still below if you want to read it."
+            : "It's back with whoever passed it to you, and they'll pick someone else. The story's still below if you want to read it."}
+        </p>
+      </PanelShell>
+    );
+  }
+
   if (landed || sentTo === "wild") {
+    const repassed = sentTo !== "wild" && !transitWords.current;
     return (
       <PanelShell tone="done">
         <div className="eyebrow !text-paper/70">{bill.serial}</div>
-        <h2 className="mt-1 font-display text-3xl font-semibold">{sentTo === "wild" ? "Released into the wild." : "Landed. Your words are in."}</h2>
+        <h2 className="mt-1 font-display text-3xl font-semibold">
+          {sentTo === "wild" ? "Released into the wild." : repassed ? "Landed. It's in new hands." : "Landed. Your words are in."}
+        </h2>
         <p className="mt-2 text-paper/80">
           {sentTo === "wild"
             ? "The first stranger to claim it gets the dollar and the next four words."
-            : "PayPal confirmed the payout, so the story moved. You're part of it now."}
+            : repassed
+              ? "PayPal confirmed the payout. It's their turn to write."
+              : "PayPal confirmed the payout, so the story moved. You're part of it now."}
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <FollowBox serial={bill.serial} compact dark />
@@ -90,7 +126,8 @@ export function ContributePanel({ bill, token, onDone }: Props) {
           <div className="eyebrow">{bill.serial}</div>
           <h2 className="mt-1 font-display text-3xl font-semibold">Sent. {bill.serial} is on its way.</h2>
           <p className="mt-1 text-muted">
-            Heading to <b className="text-ink">{view.recipient}</b>. Your words, “{view.words}”, join the story the moment the dollar lands.
+            Heading to <b className="text-ink">{view.recipient}</b>.{" "}
+            {view.words ? <>Your words, “{view.words}”, join the story the moment the dollar lands.</> : "It's theirs the moment the dollar lands."}
           </p>
           <FlyingBill />
           <PayPalStatus status={view.paypalStatus} mode={view.mode} />
@@ -100,27 +137,89 @@ export function ContributePanel({ bill, token, onDone }: Props) {
           </div>
         </PanelShell>
       );
-    case "holding":
+    case "holding": {
+      const onSent = (to: "wild" | "someone", words: string, recipient: string) => {
+        setSentTo(to);
+        if (to === "someone") {
+          // Show the in-flight state immediately; polling takes over from here.
+          prevState.current = "in_transit";
+          transitWords.current = words;
+          setView({ state: "in_transit", recipient: maskEmail(recipient), paypalStatus: "PENDING", mode: "sandbox", words });
+        }
+        onDone();
+      };
+      if (view.returnedBy) {
+        return <RepassDesk bill={bill} auth={{ t: token }} returnedBy={view.returnedBy} lastFailure={view.lastFailure} onSent={(to, recipient) => onSent(to, "", recipient)} />;
+      }
       return (
         <WritingDesk
           bill={bill}
           token={token}
           view={view}
-          onSent={(to, words, recipient) => {
-            setSentTo(to);
-            if (to === "someone") {
-              // Show the in-flight state immediately; polling takes over from here.
-              prevState.current = "in_transit";
-              setView({ state: "in_transit", recipient: maskEmail(recipient), paypalStatus: "PENDING", mode: "sandbox", words });
-            }
+          wantsDecline={wantsDecline}
+          onSent={onSent}
+          onDeclined={(state) => {
+            setDeclined(state);
             onDone();
           }}
         />
       );
+    }
   }
 }
 
-function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: string; view: Extract<HolderView, { state: "holding" }>; onSent: (to: "wild" | "someone", words: string, recipient: string) => void }) {
+/** The bill came back, and its keeper's words are already in, so all that's left is picking new hands. The creator's panel uses it too. */
+export function RepassDesk({ bill, auth, returnedBy, lastFailure, onSent }: {
+  bill: PublicBill;
+  auth: { t?: string; c?: string };
+  returnedBy: string;
+  lastFailure: PassFailure | null;
+  onSent: (to: "wild" | "someone", recipient: string) => void;
+}) {
+  const [toWild, setToWild] = useState(false);
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(lastFailure ? failureText(lastFailure) : null);
+
+  const submit = async () => {
+    if (!toWild && !isEmail(next)) return setError("Who's next? Add their email, or release it into the wild.");
+    setBusy(true);
+    setError(null);
+    try {
+      await api.repass(bill.serial, { ...auth, next: toWild ? null : next.trim() });
+      onSent(toWild ? "wild" : "someone", next.trim());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <PanelShell>
+      <div className="eyebrow">{bill.serial} came back</div>
+      <h2 className="mt-1 font-display text-[1.9rem] font-semibold leading-tight">{returnedBy} sent it back. Pick someone new.</h2>
+      <p className="mt-1 text-muted">Your words are already in the story. Send it to someone else, or release it to the wild for a stranger to claim.</p>
+      <NextHolder toWild={toWild} setToWild={setToWild} next={next} setNext={(v) => { setNext(v); setError(null); }} />
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <button type="button" className="btn btn-primary mt-5 w-full !py-4 !text-lg" onClick={submit} disabled={busy}>
+        {busy ? "Passing…" : toWild ? "Release the buck →" : "Pass the buck →"}
+      </button>
+      <p className="mt-2 text-center text-xs text-muted">
+        {toWild ? "The sandbox buck waits until someone claims it." : "We send a $1 PayPal sandbox payout. Only invite a willing recipient."}
+      </p>
+    </PanelShell>
+  );
+}
+
+function WritingDesk({ bill, token, view, wantsDecline, onSent, onDeclined }: {
+  bill: PublicBill;
+  token: string;
+  view: Extract<HolderView, { state: "holding" }>;
+  wantsDecline: boolean;
+  onSent: (to: "wild" | "someone", words: string, recipient: string) => void;
+  onDeclined: (state: "returned" | "wild") => void;
+}) {
   const [words, setWords] = useState(view.lastFailure?.words ?? "");
   const [toWild, setToWild] = useState(false);
   const [next, setNext] = useState("");
@@ -135,8 +234,16 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
   const [accepted, setAccepted] = useState(false);
-  const [error, setError] = useState<string | null>(view.lastFailure ? `PayPal couldn't deliver to ${view.lastFailure.recipient}. Pick someone else, or release it into the wild.` : null);
+  const [error, setError] = useState<string | null>(view.lastFailure ? failureText(view.lastFailure) : null);
+  const [askDecline, setAskDecline] = useState(wantsDecline);
+  const [declining, setDeclining] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const declineBox = useRef<HTMLDivElement>(null);
+  const toWildBack = view.sendBackTo === "wild";
+
+  useEffect(() => {
+    if (wantsDecline) declineBox.current?.scrollIntoView({ block: "center" });
+  }, [wantsDecline]);
 
   const tail = bill.hops.slice(-6).map((h) => h.words).join(" ");
   const place = placeText(view.place);
@@ -154,6 +261,17 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
       setError((e as Error).message);
     } finally {
       setSuggesting(false);
+    }
+  };
+
+  const decline = async () => {
+    setDeclining(true);
+    setError(null);
+    try {
+      onDeclined((await api.decline(bill.serial, token)).state);
+    } catch (e) {
+      setError((e as Error).message);
+      setDeclining(false);
     }
   };
 
@@ -194,7 +312,7 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
       </div>
 
       <div className="mt-4">
-        <WordInput ref={input} value={words} onChange={(v) => { setWords(v); setError(null); }} autoFocus touched={touched} placeholder="your four words go here" />
+        <WordInput ref={input} value={words} onChange={(v) => { setWords(v); setError(null); }} autoFocus={!wantsDecline} touched={touched} placeholder="your four words go here" />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -218,26 +336,7 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
         ))}
       </div>
 
-      <div className="mt-6">
-        <div className="mb-2 font-display text-xl font-semibold">Who's next?</div>
-        <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-line bg-paper-2 p-1">
-          {[false, true].map((wild) => (
-            <button
-              key={String(wild)}
-              type="button"
-              onClick={() => setToWild(wild)}
-              className={`rounded-full px-3 py-2 text-sm font-semibold transition ${toWild === wild ? "bg-ink text-paper shadow" : "text-muted"}`}
-            >
-              {wild ? "Release to the wild" : "Send to someone"}
-            </button>
-          ))}
-        </div>
-        {toWild ? (
-          <p className="text-sm text-muted">Anyone can claim it from the Wild page. Your words land the moment you release it.</p>
-        ) : (
-          <input className="field" type="email" inputMode="email" autoComplete="off" value={next} onChange={(e) => setNext(e.target.value)} placeholder="next@example.com" />
-        )}
-      </div>
+      <NextHolder toWild={toWild} setToWild={setToWild} next={next} setNext={setNext} wildNote="Anyone can claim it from the Wild page. Your words land the moment you release it." />
 
       <button type="button" className="mt-4 text-sm font-semibold text-ink-3 underline-offset-4 hover:underline" onClick={() => setMore((m) => !m)}>
         {more ? "− Fewer options" : "+ Sign it, leave a note, or hide your city"}
@@ -255,16 +354,76 @@ function WritingDesk({ bill, token, view, onSent }: { bill: PublicBill; token: s
       {!more && place && showCity && <p className="mt-1 text-xs text-muted">Your stamp will say {place}.</p>}
       <ParticipationTerms checked={accepted} onChange={setAccepted} />
 
-      {error && <div className="mt-4 rounded-xl border border-serial/30 bg-serial/5 px-3.5 py-2.5 text-sm font-medium text-serial">{error}</div>}
+      {error && <ErrorNote>{error}</ErrorNote>}
 
-      <button type="button" className="btn btn-primary mt-5 w-full !py-4 !text-lg" onClick={submit} disabled={busy}>
+      <button type="button" className="btn btn-primary mt-5 w-full !py-4 !text-lg" onClick={submit} disabled={busy || declining}>
         {busy ? "Passing…" : toWild ? "Release the buck →" : "Pass the buck →"}
       </button>
       <p className="mt-2 text-center text-xs text-muted">
         {toWild ? "The sandbox buck waits until someone claims it." : "We send a $1 PayPal sandbox payout. Your words land when it does. Only invite a willing recipient."}
       </p>
+
+      <div ref={declineBox} className="mt-5 border-t border-line pt-4 text-center">
+        {askDecline ? (
+          <div className="rounded-xl border border-line bg-paper-2/50 p-4 text-left">
+            <div className="font-semibold">{toWildBack ? "Put it back in the wild?" : "Send it back?"}</div>
+            <p className="mt-1 text-sm text-muted">
+              {toWildBack
+                ? "Someone else can claim it, and you won't hear from it again."
+                : "It goes back to whoever passed it to you, and they'll pick someone else. You won't hear from it again."}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className="btn btn-primary !py-2 text-sm" onClick={decline} disabled={declining || busy}>
+                {declining ? "Sending it back…" : toWildBack ? "Put it back" : "Send it back"}
+              </button>
+              <button type="button" className="btn btn-ghost !py-2 text-sm" onClick={() => setAskDecline(false)} disabled={declining}>
+                Keep it
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="text-sm text-muted underline-offset-4 hover:text-ink hover:underline" onClick={() => setAskDecline(true)}>
+            {toWildBack ? "Changed your mind? Put it back in the wild" : "Not for you? Send it back"}
+          </button>
+        )}
+      </div>
     </PanelShell>
   );
+}
+
+function NextHolder({ toWild, setToWild, next, setNext, wildNote = "Anyone can claim it from the Wild page." }: {
+  toWild: boolean;
+  setToWild: (v: boolean) => void;
+  next: string;
+  setNext: (v: string) => void;
+  wildNote?: string;
+}) {
+  return (
+    <div className="mt-6">
+      <div className="mb-2 font-display text-xl font-semibold">Who's next?</div>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-line bg-paper-2 p-1">
+        {[false, true].map((wild) => (
+          <button
+            key={String(wild)}
+            type="button"
+            onClick={() => setToWild(wild)}
+            className={`rounded-full px-3 py-2 text-sm font-semibold transition ${toWild === wild ? "bg-ink text-paper shadow" : "text-muted"}`}
+          >
+            {wild ? "Release to the wild" : "Send to someone"}
+          </button>
+        ))}
+      </div>
+      {toWild ? (
+        <p className="text-sm text-muted">{wildNote}</p>
+      ) : (
+        <input className="field" type="email" inputMode="email" autoComplete="off" value={next} onChange={(e) => setNext(e.target.value)} placeholder="next@example.com" />
+      )}
+    </div>
+  );
+}
+
+function ErrorNote({ children }: { children: React.ReactNode }) {
+  return <div className="mt-4 rounded-xl border border-serial/30 bg-serial/5 px-3.5 py-2.5 text-sm font-medium text-serial">{children}</div>;
 }
 
 function PanelShell({ children, tone }: { children: React.ReactNode; tone?: "done" }) {

@@ -22,7 +22,7 @@ export type AiMeta = { model: string; prompt: string };
 export const PROMPTS = {
   personality: "personality@1",
   diary: "diary@1",
-  nag: "nag@1",
+  nag: "nag@2",
   suggest: "suggest@1",
   finaleSuggest: "finale-suggest@1",
   eulogy: "eulogy@1",
@@ -163,7 +163,7 @@ export async function writeDiary(
 
 const NagSchema = z.object({
   subject: z.string().describe("Email subject line, max 70 chars, in your voice"),
-  body: z.string().describe("2-4 sentences to the person holding you, in your voice, asking for their four words"),
+  body: z.string().describe("2-4 sentences to the person holding you, in your voice, asking them to move you along"),
   publicNote: z.string().describe("One sentence for your public diary about being stuck, max 160 chars"),
 });
 
@@ -171,12 +171,12 @@ const NAG_TONE = [
   "",
   "Day 1 in their pocket. Polite, warm, a little needy. Gentle nudge.",
   "Day 3. Escalating. Openly dramatic. Mention that people are watching.",
-  "Day 7. Full guilt trip, theatrical, but never mean or threatening. Remind them it only takes four words. Mention that in a week you'll be declared lost and someone will have to write your eulogy.",
+  "Day 7. Full guilt trip, theatrical, but never mean or threatening. Remind them it only takes a minute. Mention that in a week you'll be declared lost and someone will have to write your eulogy.",
 ];
 
 export async function writeNag(
   env: Env,
-  p: { pers: Personality; serial: string; level: 1 | 2 | 3; place: string; followers: number; storyTail: string },
+  p: { pers: Personality; serial: string; level: 1 | 2 | 3; place: string; followers: number; storyTail: string; returned?: boolean },
 ): Promise<{ subject: string; body: string; publicNote: string; meta: AiMeta }> {
   try {
     const { data, meta } = await generate(env, {
@@ -186,6 +186,9 @@ export async function writeNag(
       prompt: [
         NAG_TONE[p.level],
         `You're stuck with someone in ${p.place}. ${p.followers} people are following your journey.`,
+        p.returned
+          ? "They already wrote their four words and passed you on, but the person they chose sent you back. Don't ask for words: ask them to pick someone new, or to release you into the wild."
+          : "Ask them for their four words.",
         `The story so far ends: "...${p.storyTail}"`,
         "Write the nag email and a public diary line.",
       ].join("\n"),
@@ -196,7 +199,7 @@ export async function writeNag(
     const days = [0, 1, 3, 7][p.level];
     return {
       subject: `Day ${days} in your pocket`,
-      body: `It's ${p.serial}. Day ${days} in your pocket. Warm in here, but I was made to move. Four words and I'm out of your hair.`,
+      body: `It's ${p.serial}. Day ${days} in your pocket. Warm in here, but I was made to move. ${p.returned ? "Pick someone new" : "Four words"} and I'm out of your hair.`,
       publicNote: `Day ${days} without moving. ${p.place} is lovely. I would like to leave it.`,
       meta: { model: "fallback", prompt: PROMPTS.nag },
     };

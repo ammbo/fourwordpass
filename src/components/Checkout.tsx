@@ -34,12 +34,6 @@ function loadSdk(clientId: string): Promise<PayPalNamespace> {
   return sdk;
 }
 
-// On phones the PayPal app hijacks sandbox.paypal.com links and can't finish sandbox orders,
-// so mobile gets the inline card form only.
-const isMobile =
-  typeof navigator !== "undefined" &&
-  (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
-
 // One of PayPal's published sandbox Visa numbers. Most visitors have no sandbox login, so everyone sees it.
 // PayPal's card form also requires a ZIP and a mobile number; fictional ones keep real details out of a test.
 const TEST_CARD = [
@@ -76,7 +70,9 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
       .then((paypal) => {
         if (cancelled || !el.current) return;
         buttons = paypal.Buttons({
-          ...(sandbox && isMobile && { fundingSource: paypal.FUNDING.CARD }),
+          // Sandbox shows the card button only. Visitors would otherwise try their real PayPal login,
+          // which can't work in the sandbox, and on phones the PayPal app hijacks the sandbox login.
+          ...(sandbox && { fundingSource: paypal.FUNDING.CARD }),
           style: { layout: "vertical", shape: "pill", color: "black", label: "pay", height: 48 },
           onClick: (_d, actions) => {
             const err = latest.current.validate();
@@ -130,11 +126,7 @@ export function Checkout({ config, purpose, validate, onPaid, onError }: Props) 
         <>
           {sandbox && <TestCard />}
           <div ref={el} className={busy ? "pointer-events-none opacity-50" : ""} />
-          {sandbox && (
-            <p className="mt-2 text-center text-xs text-muted">
-              {isMobile ? "PayPal sandbox. No real money moves." : "Have a PayPal sandbox login? Use the PayPal button instead. No real money moves."}
-            </p>
-          )}
+          {sandbox && <p className="mt-2 text-center text-xs text-muted">PayPal sandbox. No real money moves.</p>}
         </>
       ) : (
         <>
@@ -156,6 +148,7 @@ function TestCard() {
     <div className="mb-3 rounded-xl border border-dashed border-line p-3 text-sm">
       <div className="font-semibold">Pay with PayPal's sandbox test card</div>
       <p className="mt-0.5 text-xs text-muted">Choose Debit or Credit Card and enter these, with any name and email.</p>
+      <p className="mt-1.5 text-xs font-semibold text-serial">Test money only. Don't enter your own card: real cards don't work here.</p>
       <dl className="mt-2 space-y-1">
         {TEST_CARD.map(([label, shown, value]) => (
           <div key={label} className="flex items-center gap-3">

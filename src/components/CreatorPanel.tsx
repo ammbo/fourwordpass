@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { CreatorView, PublicBill } from "../../shared/types";
-import { checkFinale } from "../../shared/words";
+import { checkFinale, maskEmail } from "../../shared/words";
 import { api } from "../api";
+import { RepassDesk } from "./ContributePanel";
 import { WordInput } from "./WordInput";
 import { ParticipationTerms } from "./ParticipationTerms";
 
@@ -14,6 +15,7 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
   const [busy, setBusy] = useState<"suggest" | "end" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
 
   useEffect(() => {
     api.creator(bill.serial, token).then(setView, () => setView({ valid: false }));
@@ -26,6 +28,18 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
 
   if (!view?.valid) return null;
   if (bill.status === "complete" || bill.status === "eulogized") return null;
+  // The first holder sent it back: it's in the creator's hands until they pick someone new.
+  if (view.returnedBy && !sent) {
+    return (
+      <RepassDesk
+        bill={bill}
+        auth={{ c: token }}
+        returnedBy={view.returnedBy}
+        lastFailure={view.lastFailure}
+        onSent={(to, recipient) => setSent(to === "wild" ? "Released into the wild." : `Passed to ${maskEmail(recipient)}.`)}
+      />
+    );
+  }
 
   const suggest = async () => {
     setBusy("suggest");
@@ -61,6 +75,7 @@ export function CreatorPanel({ bill, token }: { bill: PublicBill; token: string 
           <div className="font-display text-xl font-semibold">
             {goalHit ? `${bill.hopCount} of ${bill.goalHops} hops. The ending is yours.` : "You started this story. You get to end it."}
           </div>
+          {sent && <div className="text-sm font-medium text-ink-2">{sent}</div>}
           {bill.goalHops && !goalHit && (
             <div className="text-sm text-muted">
               {bill.hopCount} of {bill.goalHops} hops so far. It can keep going as long as you like.

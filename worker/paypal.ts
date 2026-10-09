@@ -4,7 +4,8 @@
 //
 // PAYPAL_MODE picks the environment: live (real money), sandbox (test money), or mock.
 // Mock simulates both APIs so the whole loop runs without credentials.
-// Mock payouts settle ~3s after creation; any recipient containing "+fail" fails.
+// Mock payouts settle ~3s after creation. Recipients containing "+fail" fail, "+flaky"
+// get simulated PayPal outages for their first ~8s, and "+stuck" never settle.
 
 import { HOP_AMOUNT, MINT_PRICE } from "../shared/brand";
 import type { PayPalMode } from "../shared/types";
@@ -72,25 +73,41 @@ async function api<T>(env: Env, path: string, init: { method?: string; body?: un
       const j = JSON.parse(text) as { message?: string; name?: string; details?: { issue?: string; description?: string }[] };
       message = j.details?.[0]?.description || j.details?.[0]?.issue || j.message || j.name || message;
     } catch { /* keep raw text */ }
-    throw new PayPalError(res.status, message);
+    throw new PayPalError(res.status, message, text.slice(0, 2000));
   }
   return (text ? JSON.parse(text) : {}) as T;
 }
 
 export class PayPalError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public body = "") {
     super(message);
   }
+}
+
+/**
+ * Worth retrying with the same pass id: PayPal's own outages, rate limits, auth hiccups
+ * and network errors. A 4xx is PayPal rejecting the request itself, so it fails the pass.
+ */
+export function isTransient(e: unknown): boolean {
+  if (!(e instanceof PayPalError)) return true;
+  return e.status >= 500 || e.status === 401 || e.status === 408 || e.status === 429;
+}
+
+/** A retry found that the first attempt reached PayPal after all; its webhook will settle the pass. */
+export function isDuplicateBatch(e: unknown): boolean {
+  return e instanceof PayPalError && e.status < 500 && /sender_batch_id|duplicate/i.test(`${e.message} ${e.body}`);
 }
 
 // ---------------------------------------------------------------- Payouts
 
 export async function createPayout(
   env: Env,
-  p: { passId: string; email: string; note: string; subject: string; message: string },
+  p: { passId: string; email: string; note: string; subject: string; message: string; since: number },
 ): Promise<{ batchId: string }> {
   if (paypalMode(env) === "mock") {
-    return { batchId: `MOCK${Date.now().toString(36).toUpperCase()}${p.email.includes("+fail") ? "F" : "S"}` };
+    if (p.email.includes("+flaky") && Date.now() - p.since < 8000) throw new PayPalError(503, "Service unavailable (simulated)");
+    const outcome = p.email.includes("+fail") ? "F" : p.email.includes("+stuck") ? "P" : "S";
+    return { batchId: `MOCK${Date.now().toString(36).toUpperCase()}${outcome}` };
   }
   const res = await api<{ batch_header: { payout_batch_id: string } }>(env, "/v1/payments/payouts", {
     method: "POST",
@@ -121,7 +138,7 @@ export async function getPayout(env: Env, batchId: string): Promise<PayoutState>
   if (batchId.startsWith("MOCK")) {
     const created = parseInt(batchId.slice(4, -1), 36);
     const willFail = batchId.endsWith("F");
-    if (Date.now() - created < 2500) return { status: "PENDING", itemId: null, transactionId: null, error: null };
+    if (Date.now() - created < 2500 || batchId.endsWith("P")) return { status: "PENDING", itemId: null, transactionId: null, error: null };
     return {
       status: willFail ? "FAILED" : "UNCLAIMED",
       itemId: `MOCKITEM${batchId.slice(4)}`,

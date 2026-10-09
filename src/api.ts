@@ -45,6 +45,8 @@ export const api = {
     req<{ state: "wild" | "in_transit" }>(`/api/bills/${serial}/contribute`, body),
   suggest: (serial: string, body: { t?: string; c?: string; mode?: "finale" }) => req<{ options: string[]; left?: number }>(`/api/bills/${serial}/suggest`, body),
   claim: (serial: string, email: string) => req<{ token: string }>(`/api/bills/${serial}/claim`, { email }),
+  decline: (serial: string, t: string) => req<{ state: "returned" | "wild" }>(`/api/bills/${serial}/decline`, { t }),
+  repass: (serial: string, body: { t?: string; c?: string; next: string | null }) => req<{ state: "wild" | "in_transit" }>(`/api/bills/${serial}/repass`, body),
   follow: (serial: string, email: string, preference: FollowPreference) => req<{ ok: true }>(`/api/bills/${serial}/follow`, { email, preference }),
   finale: (serial: string, c: string, words: string) => req<{ ok: true }>(`/api/bills/${serial}/finale`, { c, words }),
   resend: (serial: string) => req<{ ok: true }>(`/api/bills/${serial}/resend`, {}),

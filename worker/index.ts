@@ -167,6 +167,29 @@ app.post("/api/bills/:serial/contribute", async (c) => {
   return c.json(await engine.contribute(c.env, ctxOf(c), placeFromRequest(c.req.raw), bill, body));
 });
 
+/** Not for you: the bill goes back to whoever passed it to you, or back to the wild if you claimed it. */
+app.post("/api/bills/:serial/decline", async (c) => {
+  await limit(c.env.RL_WRITE, `decline:${ip(c.req.raw)}`);
+  const body = await c.req.json<{ t: string }>();
+  const bill = await getBillBySerial(c.env, c.req.param("serial"));
+  if (!bill) throw new UserError("No bill by that serial.", 404);
+  if (!(await checkCap(c.env, "holder", bill.holder_pass_id, body.t))) throw new UserError("This buck has moved on.", 403);
+  return c.json(await engine.declineBill(c.env, ctxOf(c), bill));
+});
+
+/** A bill that came back: its holder, or its creator when it was the first hand-off, picks someone new. */
+app.post("/api/bills/:serial/repass", async (c) => {
+  await limit(c.env.RL_WRITE, `contribute:${ip(c.req.raw)}`);
+  const body = await c.req.json<{ t?: string; c?: string; next: string | null }>();
+  const bill = await getBillBySerial(c.env, c.req.param("serial"));
+  if (!bill) throw new UserError("No bill by that serial.", 404);
+  const allowed = bill.holder_pass_id
+    ? await checkCap(c.env, "holder", bill.holder_pass_id, body.t)
+    : await checkCap(c.env, "creator", bill.id, body.c);
+  if (!allowed) throw new UserError("This buck has moved on.", 403);
+  return c.json(await engine.repass(c.env, ctxOf(c), bill, body.next));
+});
+
 app.post("/api/bills/:serial/claim", async (c) => {
   await limit(c.env.RL_WRITE, `claim:${ip(c.req.raw)}`);
   const { email } = await c.req.json<{ email: string }>();

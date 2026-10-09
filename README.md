@@ -36,6 +36,8 @@ The concept and the core loop are built as specified. These are the deliberate d
 - **One Cloudflare Worker** serves the React app and API, with D1, R2, Workers AI (stamp art plus a text fallback), Cloudflare Email Sending (no Resend), `request.cf` for city-level location (no geo-IP service), and a cron for nags, polling and backfills.
 - **Passport stamps** are crisp SVG (city, date, serial, hop number) with an AI ink illustration tinted into the middle. Image models garble text, so they never draw the lettering.
 - **Fast polling** right after each payout, plus the webhook, plus a cron fallback. In sandbox the "watch it land" moment takes seconds.
+- **PayPal hiccups aren't the recipient's fault.** A 5xx, rate limit, auth blip or network error when creating a payout keeps the pass in flight and retries it with the same pass id (the `sender_batch_id`, so PayPal can't pay twice). Only a 4xx rejection fails the pass. Anything PayPal hasn't settled after two hours fails, so a stuck payout can't freeze a bill.
+- **Send it back.** A holder who doesn't want the bill sends it back to whoever passed it to them (the creator, for a first hand-off), who picks someone else with no new words. A claimer puts it back in the wild. Holder emails and nags carry the link, so nobody named by a friend is stuck with three nags and a dead story.
 - **Each bill gets a unique spirograph rosette** on its banknote, generated from its serial.
 - **Open Books**, a public ledger of every dollar in and out (AG Grid + AG Charts). Being the sender of record on every payout is what makes it possible.
 
@@ -59,7 +61,7 @@ One pun per surface, and each one has a job.
 ```
 worker/
   index.ts       routes (Hono), share-page meta tags, cron entry
-  engine.ts      the lifecycle: mint/fork, passes, deliver/fail, contribute, claim, endings, nags
+  engine.ts      the lifecycle: mint/fork, passes, deliver/fail/retry, contribute, claim, send back, endings, nags
   paypal.ts      Payouts + Orders + webhook verification (and a mock for local dev)
   ai.ts          personality, diary, nags, suggestions, eulogy, stamps; prompts are versioned
   views.ts       public projections (emails, payout ids, ai_assisted never leave here)
@@ -93,7 +95,7 @@ npm run db:migrate:local
 npm run dev                           # http://localhost:5173
 ```
 
-In mock mode payouts settle about 3s after creation. Any recipient containing `+fail` (e.g. `x+fail@example.com`) fails, which exercises the retry path. Emails land in the `emails` table, which you can view at `GET /api/admin/outbox` with `Authorization: Bearer dev-admin`.
+In mock mode payouts settle about 3s after creation. Recipients can trigger the unhappy paths: `+fail` (e.g. `x+fail@example.com`) fails, `+flaky` gets simulated PayPal outages for its first ~8s and is retried, and `+stuck` never settles (it fails after two hours). Emails land in the `emails` table, which you can view at `GET /api/admin/outbox` with `Authorization: Bearer dev-admin`.
 
 ```bash
 npm test          # four-word rule, AI closing budget, moderation
@@ -124,7 +126,7 @@ To set it up from scratch:
    PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... node scripts/paypal-webhook.mjs
    npx wrangler secret put PAYPAL_WEBHOOK_ID      # paste the id it printed
    ```
-3. Checkout shows one of PayPal's published sandbox test cards (Visa `4012 0000 7777 7777`) with copy buttons, so visitors can pay the $2 through "Debit or Credit Card" with no PayPal account. On a computer, a sandbox **personal** (buyer) account also works through the PayPal button. Phones get the card option only: an installed PayPal app takes over the sandbox login and can't finish the order. Payouts come from your sandbox **business** account balance.
+3. Checkout shows only PayPal's card button, with one of PayPal's published sandbox test cards (Visa `4012 0000 7777 7777`) and copy buttons, so visitors pay the $2 through "Debit or Credit Card" with no PayPal account. The PayPal login button is hidden in sandbox: visitors would try their real PayPal login, which can't work there, and on phones an installed PayPal app takes over the sandbox login and can't finish the order. Payouts come from your sandbox **business** account balance; every hop spends $1 of it, so keep an eye on it.
 
 Optional: `npx wrangler secret put ANTHROPIC_API_KEY` for a noticeably better bill voice.
 
