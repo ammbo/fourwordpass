@@ -16,11 +16,12 @@ it("keeps service mail within the provider's header contract and includes the pu
   } as unknown as Env;
   const unsubscribeUrl = "https://fourwordpass.com/f/test-settings";
   expect(await sendMail(env, {
-    to: "reader@example.com", kind: "follow", fromName: "FWP-0001",
+    to: "reader@example.com", kind: "follow", serial: "FWP-0001",
     subject: "A story update", heading: "Four more words", paragraphs: ["The story moved."], unsubscribeUrl,
   })).toBe(true);
   expect(send).toHaveBeenCalledOnce();
-  const message = send.mock.calls[0][0];
+  const message = send.mock.calls[0][0] as { from: { name: string }; replyTo?: string; headers?: Record<string, string>; html: string; text: string };
+  expect(message.from.name).toBe("Four Word Pass");
   expect(message.replyTo).toBe(SUPPORT_EMAIL);
   expect(message.headers?.["List-Unsubscribe"]).toBe(`<${unsubscribeUrl}>`);
   for (const { path } of INFO_LINKS) {

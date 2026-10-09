@@ -106,7 +106,7 @@ npm run typecheck
 npm run deploy    # build → remote D1 migrations → wrangler deploy
 ```
 
-Production secrets (`TOKEN_SECRET`, `ADMIN_TOKEN`) are already set. A copy is in `.secrets.local`, which is gitignored. Email Sending is enabled for `fourwordpass.com`; mail comes from `buck@fourwordpass.com` with the bill's serial as the sender name.
+Production secrets (`TOKEN_SECRET`, `ADMIN_TOKEN`) are already set. A copy is in `.secrets.local`, which is gitignored. Email Sending is enabled for `fourwordpass.com`; mail comes from `buck@fourwordpass.com` with "Four Word Pass" as the sender name.
 
 ## PayPal sandbox
 
@@ -130,7 +130,7 @@ Optional: `npx wrangler secret put ANTHROPIC_API_KEY` for a noticeably better bi
 
 ## Email
 
-Outbound mail goes through Cloudflare Email Sending, from `buck@fourwordpass.com` with the bill's serial as the sender name and `support@fourwordpass.com` as Reply-To. Inbound mail to **any** `@fourwordpass.com` address is caught by Email Routing and stored by the Worker's `email()` handler. Read support messages with authenticated `GET /api/admin/inbox?to=support@fourwordpass.com`. Replies are manual; there is no automatic support response or inbox notification. The endpoint returns the latest 20 messages for the selected address. See [Policies and support](docs/policies-and-support.md) for operating procedures.
+Outbound mail goes through Cloudflare Email Sending, from `buck@fourwordpass.com` with "Four Word Pass" as the sender name (the bill's serial is printed inside) and `support@fourwordpass.com` as Reply-To. Inbound mail to **any** `@fourwordpass.com` address is caught by Email Routing and stored by the Worker's `email()` handler. Read support messages with authenticated `GET /api/admin/inbox?to=support@fourwordpass.com`. Replies are manual; there is no automatic support response or inbox notification. The endpoint returns the latest 20 messages for the selected address. See [Policies and support](docs/policies-and-support.md) for operating procedures.
 
 ## Admin
 

@@ -190,11 +190,12 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
       to: creatorEmail,
       kind: "creator",
       billId,
-      fromName: bill.serial,
-      subject: `${bill.serial} is out in the world`,
+      serial: bill.serial,
+      subject: "Your story is out in the world (keep this email)",
+      preheader: "The button in this email is your key to writing the ending. Keep it somewhere safe.",
       heading: `I'm ${pers.personality.name}.`,
       paragraphs: [
-        `${pers.personality.tagline} Thanks for printing me. I'm ${bill.serial}, and I'm ${firstRecipient ? `on my way to ${maskEmail(firstRecipient)}` : "loose in the wild, waiting for someone to pick me up"}.`,
+        `${pers.personality.tagline.replace(/([^.!?…])$/, "$1.")} Thanks for printing me. I'm ${bill.serial}, and I'm ${firstRecipient ? `on my way to ${maskEmail(firstRecipient)}` : "loose in the wild, waiting for someone to pick me up"}.`,
         "You're following every hop. When the story's ready to end, you write the finale. Keep this email: the button below is your key.",
         `Share my page: ${share}`,
       ],
@@ -308,8 +309,8 @@ async function failPass(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState) {
           to: holderPass.recipient_email,
           kind: "pass_failed",
           billId: bill.id,
-          fromName: bill.serial,
-          subject: `I couldn't reach ${maskEmail(pass.recipient_email)}`,
+          serial: bill.serial,
+          subject: `${personalityOf(bill).name} couldn't reach ${maskEmail(pass.recipient_email)}`,
           heading: "Still in your pocket.",
           paragraphs: [
             `PayPal couldn't deliver me to ${maskEmail(pass.recipient_email)}, so your words are on hold. Pick someone else, or release me into the wild.`,
@@ -333,8 +334,8 @@ async function failPass(env: Env, ctx: Ctx, pass: PassRow, state: PayoutState) {
           to: bill.creator_email,
           kind: "mint_failed",
           billId: bill.id,
-          fromName: bill.serial,
-          subject: `I couldn't reach ${maskEmail(pass.recipient_email)}, so I went wild`,
+          serial: bill.serial,
+          subject: `${personalityOf(bill).name} couldn't reach ${maskEmail(pass.recipient_email)}, so it went wild`,
           heading: "Change of plans.",
           paragraphs: [
             `PayPal couldn't deliver me to ${maskEmail(pass.recipient_email)}. Rather than sit around, I released myself into the wild. The first stranger to claim me picks up the story.`,
@@ -381,21 +382,39 @@ async function emailHolder(env: Env, pass: PassRow, resend = false) {
   const tail = await storyTail(env, bill.id, 30);
   const places = await env.DB.prepare("SELECT COUNT(DISTINCT city) AS n FROM hops WHERE bill_id = ? AND status = 'confirmed' AND city IS NOT NULL").bind(bill.id).first<{ n: number }>();
   const n = bill.hop_count;
+  // A claimer chose this bill on the site. Anyone else was named by the last holder and may never have heard of us.
+  const claimed = pass.kind === "claim";
+  const signedAs = !claimed && pass.from_hop_id ? (await getHop(env, pass.from_hop_id))?.pen_name : null;
+  const money =
+    pass.paypal_mode === "sandbox"
+      ? "A $1 PayPal sandbox payout came with me. It's test money, so PayPal won't email you about it: this email is your way in."
+      : pass.paypal_mode === "mock"
+        ? "A simulated $1 payout came with me."
+        : "PayPal just sent you $1.00. That's me.";
   await sendMail(env, {
     to: pass.recipient_email,
     kind: resend ? "holder_resend" : "holder",
     billId: bill.id,
-    fromName: bill.serial,
-    subject: `${bill.serial} is yours`,
-    heading: `${bill.serial} is yours.`,
+    serial: bill.serial,
+    subject: claimed ? `You claimed ${pers.name}. Add your four words.` : "Someone passed you a story. Add four words.",
+    preheader: claimed
+      ? "You have 24 hours to add four words before it wanders back to the wild."
+      : "A dollar is carrying a story from person to person. Add four words, then pass it on. About a minute, no account.",
+    image: claimed ? undefined : "share-card",
+    heading: claimed ? `${bill.serial} is yours.` : "You've been passed the buck.",
     paragraphs: [
-      `I'm ${pers.name}. ${n} ${n === 1 ? "stranger has" : "strangers have"} written my story so far${places?.n ? `, across ${places.n} ${places.n === 1 ? "place" : "places"}` : ""}. Now it's your turn: add exactly four words, then pass me on.`,
-      `PayPal just sent you $1.00${pass.paypal_mode === "sandbox" ? " (sandbox)" : pass.paypal_mode === "mock" ? " (simulated)" : ""}. That's me. No account or app needed here; it takes about a minute.`,
+      ...(claimed
+        ? []
+        : [`Someone passed you a buck on Four Word Pass: a dollar that carries a story, written four words at a time by whoever holds it.${signedAs ? ` They signed their words “${signedAs}.”` : ""}`]),
+      `I'm ${pers.name}, the buck. ${n <= 1 ? "My story has only just started" : `${n} strangers have written my story so far${places?.n ? `, across ${places.n} ${places.n === 1 ? "place" : "places"}` : ""}`}. Now it's your turn: add exactly four words, then pass me on.`,
+      `${money} No account or app needed; it takes about a minute.`,
     ],
     quote: tail || undefined,
     quoteLabel: tail ? "The story so far" : undefined,
     button: { label: "Add your 4 words", url: appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`) },
-    footer: pass.kind === "claim" ? "You claimed me from the wild. You have 24 hours before I wander back out." : "If you sit on me, I get needy. You've been warned.",
+    footer: claimed
+      ? "You claimed me from the wild. You have 24 hours before I wander back out."
+      : "Not your thing? Open the link and release me to the wild, so a stranger can carry me on. If you just sit on me, I get needy.",
   });
 }
 
@@ -468,8 +487,8 @@ async function goalReached(env: Env, bill: BillRow) {
     to: bill.creator_email,
     kind: "goal",
     billId: bill.id,
-    fromName: bill.serial,
-    subject: `${bill.serial} hit ${bill.goal_hops} hops`,
+    serial: bill.serial,
+    subject: `${personalityOf(bill).name} hit ${bill.goal_hops} hops. Ready to write the ending?`,
     heading: `${bill.goal_hops} hops. Your move.`,
     paragraphs: [
       `I made it to the goal you set. The story is still moving, and it can keep going forever if you like. But when you're ready, the ending is yours to write: up to twelve words to land it.`,
@@ -604,8 +623,8 @@ export async function nag(env: Env, bill: BillRow, level: 1 | 2 | 3) {
     to: pass.recipient_email,
     kind: `nag${level}`,
     billId: bill.id,
-    fromName: bill.serial,
-    subject: n.subject,
+    serial: bill.serial,
+    subject: `${pers.name}: ${n.subject}`,
     heading: n.subject,
     paragraphs: [n.body, bill.follower_count > 1 ? `${bill.follower_count} people are watching me. No pressure.` : ""].filter(Boolean),
     button: { label: "Add your 4 words", url: appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`) },
@@ -640,8 +659,8 @@ export async function follow(env: Env, bill: BillRow, emailIn: string, preferenc
     to: email,
     kind: "follow",
     billId: bill.id,
-    fromName: bill.serial,
-    subject: `You're following ${bill.serial}`,
+    serial: bill.serial,
+    subject: `You're following ${personalityOf(bill).name}`,
     heading: "You're following me.",
     paragraphs: [
       preference === "every_hop"
@@ -660,6 +679,7 @@ async function notifyFollowers(env: Env, bill: BillRow, kind: "hop" | "end" | "s
     .all<{ id: string; email: string }>();
   if (!results.length) return;
   const url = appUrl(env, `/b/${bill.serial}`);
+  const name = personalityOf(bill).name;
   const tail = kind === "end" ? await storyTail(env, bill.id, 40) : "";
   for (const f of results) {
     if (kind === "hop" && p.hop?.writer_email === f.email) continue; // they know; they wrote it
@@ -667,8 +687,8 @@ async function notifyFollowers(env: Env, bill: BillRow, kind: "hop" | "end" | "s
     if (kind === "hop" && p.hop) {
       const place = hopPlace(p.hop);
       await sendMail(env, {
-        to: f.email, kind: "follower_hop", billId: bill.id, fromName: bill.serial,
-        subject: `Hop ${p.hop.idx}: ${place}`,
+        to: f.email, kind: "follower_hop", billId: bill.id, serial: bill.serial,
+        subject: `${name} moved: hop ${p.hop.idx}, ${place}`,
         heading: `Hop ${p.hop.idx}, ${place}.`,
         paragraphs: p.diaryLine ? [p.diaryLine] : [],
         quote: p.hop.words, quoteLabel: p.hop.pen_name ? `New words from ${p.hop.pen_name}` : `New words from a stranger in ${place}`,
@@ -676,8 +696,8 @@ async function notifyFollowers(env: Env, bill: BillRow, kind: "hop" | "end" | "s
       });
     } else if (kind === "stall") {
       await sendMail(env, {
-        to: f.email, kind: "follower_stall", billId: bill.id, fromName: bill.serial,
-        subject: `${bill.serial} hasn't moved in a week`,
+        to: f.email, kind: "follower_stall", billId: bill.id, serial: bill.serial,
+        subject: `${name} hasn't moved in a week`,
         heading: "I'm stuck.",
         paragraphs: [p.note ?? "", "Seven days in one pocket. If you know who has me, a little social pressure wouldn't hurt."].filter(Boolean),
         button: { label: "See where I'm stuck", url }, unsubscribeUrl,
@@ -685,8 +705,8 @@ async function notifyFollowers(env: Env, bill: BillRow, kind: "hop" | "end" | "s
     } else {
       const lost = bill.status === "eulogized";
       await sendMail(env, {
-        to: f.email, kind: "follower_end", billId: bill.id, fromName: bill.serial,
-        subject: lost ? `${bill.serial} has been declared lost` : `${bill.serial}: the end`,
+        to: f.email, kind: "follower_end", billId: bill.id, serial: bill.serial,
+        subject: lost ? `${name} has been declared lost` : `${name}: the end`,
         heading: lost ? "Pour one out." : "The end.",
         paragraphs: lost ? [bill.eulogy ?? ""] : [`My creator wrote the finale. ${bill.hop_count} hops, ${bill.word_count} words, all by strangers.`],
         quote: [tail, bill.finale_text].filter(Boolean).join(" "),

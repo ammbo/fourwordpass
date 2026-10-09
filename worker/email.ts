@@ -1,17 +1,20 @@
-// Every email is from the bill itself ("FWP-0042"), in its voice.
+// Every email comes from "Four Word Pass", so a first-time recipient knows who's writing.
+// The body is in the bill's voice, with its serial printed at the top.
 // EMAIL_MODE=log stores the full email in D1 instead of sending (local dev).
 
 import { newId, now } from "./util";
 import { INFO_LINKS, SUPPORT_EMAIL } from "../shared/info";
-import { SITE_URL } from "../shared/site";
+import { SHARE_IMAGE, SITE_NAME, SITE_URL } from "../shared/site";
 
 export type Mail = {
   to: string;
   kind: string;
   billId?: string;
-  fromName: string;          // usually the serial
+  serial?: string;           // printed above the heading
   subject: string;
+  preheader?: string;        // inbox preview text; defaults to the first paragraph
   heading: string;
+  image?: "share-card";      // the site's explainer card, for people meeting us for the first time
   paragraphs: string[];
   quote?: string;            // a slice of the story
   quoteLabel?: string;
@@ -38,14 +41,20 @@ function renderHtml(m: Mail): string {
        </td></tr></table>
        <div style="font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d;word-break:break-all">${esc(m.button.url)}</div>`
     : "";
+  const preheader = m.preheader ?? m.paragraphs[0] ?? "";
+  const image = m.image
+    ? `<a href="${SITE_URL}" style="display:block;margin:0 0 20px"><img src="${SHARE_IMAGE}" width="496" alt="One dollar. Many strangers. One story. Add four words. Pass it on." style="display:block;width:100%;max-width:496px;height:auto;border:0;border-radius:8px"></a>`
+    : "";
   const unsub = m.unsubscribeUrl
     ? ` · <a href="${esc(m.unsubscribeUrl)}" style="color:#7a857d">Change or stop these emails</a>`
     : "";
   return `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#e9e4d6">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all">${esc(preheader)}&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;&#8199;&#847;</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+${m.image ? "" : `<a href="${SITE_URL}" style="display:block;max-width:560px;margin:0 auto 14px"><img src="${SITE_URL}/wordmark.png" width="200" height="40" alt="${SITE_NAME}" style="display:block;border:0"></a>`}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fbf8f0;border:1px solid #c9c2ad;border-radius:14px">
 <tr><td style="padding:6px"><div style="border:2px solid #17402f;border-radius:10px;padding:26px 24px">
-<div style="font:700 13px/1 'Courier New',monospace;letter-spacing:.18em;color:#b3261e">${esc(m.fromName)}</div>
+${image}${m.serial ? `<div style="font:700 13px/1 'Courier New',monospace;letter-spacing:.18em;color:#b3261e">${esc(m.serial)}</div>` : ""}
 <h1 style="margin:14px 0 16px;font:700 26px/1.2 Georgia,serif;color:#17402f">${esc(m.heading)}</h1>
 ${p}${quote}${button}
 ${m.footer ? `<p style="margin:20px 0 0;font:13px/1.5 Helvetica,Arial,sans-serif;color:#5d6f63">${esc(m.footer)}</p>` : ""}
@@ -86,7 +95,7 @@ export async function sendMail(env: Env, m: Mail): Promise<boolean> {
   }
   try {
     const res = await env.EMAIL.send({
-      from: { email: env.MAIL_FROM, name: m.fromName },
+      from: { email: env.MAIL_FROM, name: SITE_NAME },
       to: m.to,
       subject: m.subject,
       html: renderHtml(m),
