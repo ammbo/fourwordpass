@@ -8,3 +8,5 @@ dist
 *.local
 .firecrawl/
 output/
+devpost-submission.md
+video-concepts.md
