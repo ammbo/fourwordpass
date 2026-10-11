@@ -179,7 +179,7 @@ export type HomeData = {
 };
 
 /** The signed-in account. The email is the account's own, shown only to its owner. */
-export type Me = { email: string; handle: string | null; isAdmin: boolean; createdAt: number };
+export type Me = { firstName: string | null; lastName: string | null; email: string; handle: string | null; isAdmin: boolean; createdAt: number };
 
 export type DashboardHop = {
   serial: string;

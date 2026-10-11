@@ -32,16 +32,16 @@ export type Challenge = { id: string; code: string | null; url: string };
  * same link as the one already queued in its email.
  */
 export async function createChallenge(env: Env, email: string, opts: {
-  id?: string; withCode?: boolean; handle?: string | null; followId?: string | null; next?: string | null; ttl?: number;
+  firstName?: string; lastName?: string; id?: string; withCode?: boolean; handle?: string | null; followId?: string | null; next?: string | null; ttl?: number;
 } = {}): Promise<Challenge> {
   const t = now();
   const id = opts.id ?? newId();
   const code = opts.withCode ? String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0") : null;
   const link = opts.id ? await capToken(env, "signin", `link:${id}`) : randomToken();
-  await env.DB.prepare(`INSERT OR IGNORE INTO auth_challenges (id, email, code_hash, link_hash, handle, follow_id, expires_at, created_at)
-    VALUES (?,?,?,?,?,?,?,?)`)
+  await env.DB.prepare(`INSERT OR IGNORE INTO auth_challenges (id, email, code_hash, link_hash, handle, follow_id, expires_at, created_at, first_name, last_name)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
     .bind(id, email, code ? await capToken(env, "signin", `${id}:${code}`) : randomToken(), await sha256Hex(link),
-      opts.handle ?? null, opts.followId ?? null, t + (opts.ttl ?? CODE_TTL), t).run();
+      opts.handle ?? null, opts.followId ?? null, t + (opts.ttl ?? CODE_TTL), t, opts.firstName ?? null, opts.lastName ?? null).run();
   const params = new URLSearchParams({ ch: id, k: link });
   if (opts.next) params.set("next", opts.next);
   if (opts.handle) params.set("pen", opts.handle);

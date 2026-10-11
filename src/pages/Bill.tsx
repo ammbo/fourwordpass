@@ -1,3 +1,4 @@
+import { profileSchema, type ProfileName } from "../../shared/names";
 import { payoutDescription, paymentNotice } from "../../shared/payments";
 import { usePaymentMode } from "../paymentMode";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -366,6 +367,7 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
   const { me } = useMe();
   const [email, setEmail] = useState(me?.email ?? "");
   const [penName, setPenName] = useState("");
+  const [profile, setProfile] = useState<ProfileName>({ firstName: "", lastName: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
@@ -374,11 +376,12 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
     if (!isEmail(email)) return setError("We need your PayPal email to send you the dollar.");
     if (!accepted) return setError("Confirm you're 18 or older and agree to the terms before claiming.");
     const pen = me ? "" : penName.trim();
+    if (pen && !profileSchema.safeParse(profile).success) return setError("Enter your first name so recipients recognize you.");
     if (penNameError(pen)) return setError(penNameError(pen));
     setBusy(true);
     setError(null);
     try {
-      const out = await api.claim(serial, email, pen || undefined);
+      const out = await api.claim(serial, email, pen || undefined, pen ? profile : undefined);
       onClaimed(out.token, out.account);
     } catch (err) {
       setError((err as Error).message);
@@ -390,7 +393,7 @@ function ClaimModal({ serial, onClose, onClaimed }: { serial: string; onClose: (
       <form onSubmit={submit}>
         <p className="text-muted">{payoutDescription(mode)} {paymentNotice(mode)} When the handoff lands, you add four words and pass it on. You have 24 hours before it wanders back into the wild.</p>
         <input className="field mt-4" type="email" inputMode="email" autoFocus aria-label="Email for your holder link" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={mode === "mock" ? "your email" : "your PayPal email"} />
-        {!me && <PenNameOffer value={penName} onChange={(v) => { setPenName(v); setError(null); }} />}
+        {!me && <PenNameOffer profile={profile} onProfileChange={setProfile} value={penName} onChange={(v) => { setPenName(v); setError(null); }} />}
         <ParticipationTerms checked={accepted} onChange={setAccepted} />
         {error && <div className="mt-3 text-sm font-medium text-serial">{error}</div>}
         <button className="btn btn-primary mt-4 w-full !py-3.5" disabled={busy || mode === "live" || !mode}>{busy ? "Claiming…" : "Claim it"}</button>

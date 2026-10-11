@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import type { BillSummary, Dashboard as DashboardData, DashboardHop, FollowPreference } from "../../shared/types";
 import { checkPenName } from "../../shared/words";
-import { CodeSignIn, VerifiedMark, useMe } from "../account";
+import { CodeSignIn, ProfileForm, VerifiedMark, useMe } from "../account";
 import { api } from "../api";
 import { Stamp } from "../components/Stamp";
 import { STATUS_LABEL, STATUS_TONE, longDate, nf, timeAgo } from "../lib";
@@ -125,6 +125,8 @@ export function Dashboard() {
         </div>
         <button type="button" className="btn btn-ghost !py-2 text-sm" onClick={signOut}>Sign out</button>
       </header>
+
+      <section className="card mt-6 p-5"><h2 className="font-display text-xl">Your invitation name</h2><ProfileForm me={me} /></section>
 
       {error && <p role="alert" className="mt-6 text-serial">{error} <button className="underline" onClick={reload}>Try again</button></p>}
 

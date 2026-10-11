@@ -1,3 +1,4 @@
+import { profileSchema, type ProfileName } from "../shared/names";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { Me } from "../shared/types";
 import { checkPenName, isEmail } from "../shared/words";
@@ -13,7 +14,7 @@ export function MeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     api.me().then((r) => setMe(r.me), () => {}).finally(() => setLoaded(true));
   }, []);
-  return <MeContext.Provider value={{ me, loaded, setMe }}>{children}</MeContext.Provider>;
+  return <MeContext.Provider value={{ me, loaded, setMe }}>{children}{me && !me.firstName && <div className="fixed inset-0 z-[100] overflow-y-auto bg-ink/60 px-4 py-12"><div role="dialog" aria-modal="true" aria-labelledby="profile-heading" className="card mx-auto max-w-md p-6"><h2 id="profile-heading" className="font-display text-2xl">Help friends recognize you.</h2><ProfileForm me={me} /></div></div>}</MeContext.Provider>;
 }
 
 export const useMe = () => useContext(MeContext);
@@ -28,7 +29,9 @@ export const penNameError = (value: string) => (value.trim() ? checkPenName(valu
  * The optional field that turns any email someone types into an account offer. Nothing is
  * created until they tap the link (or enter the code) in the email that goes to that address.
  */
-export function PenNameOffer({ value, onChange, dark, label = "Want an account too? Pick a pen name" }: {
+export function PenNameOffer({ value, onChange, profile, onProfileChange, dark, label = "Want an account too? Pick a pen name" }: {
+  profile: ProfileName;
+  onProfileChange: (profile: ProfileName) => void;
   value: string;
   onChange: (value: string) => void;
   dark?: boolean;
@@ -48,6 +51,7 @@ export function PenNameOffer({ value, onChange, dark, label = "Want an account t
           autoComplete="nickname"
         />
       </label>
+      {value.trim() && <NameFields value={profile} onChange={onProfileChange} dark={dark} />}
       <p className={`mt-1 text-xs ${muted}`}>
         {value.trim()
           ? "We'll email a link to confirm it's you. No password. Once it's yours, nobody else can sign with it."
@@ -72,6 +76,7 @@ export function CodeSignIn({ via, next, onSignedIn, dark, startLabel = "Email me
 }) {
   const { setMe } = useMe();
   const [email, setEmail] = useState(defaultEmail);
+  const [profile, setProfile] = useState<ProfileName>({ firstName: "", lastName: "" });
   const [penName, setPenName] = useState(pending?.penName ?? "");
   const [typed, setTyped] = useState(!via);
   const [challenge, setChallenge] = useState<{ id: string; sentTo: string } | null>(pending ? { id: pending.challenge, sentTo: pending.sentTo } : null);
@@ -84,11 +89,12 @@ export function CodeSignIn({ via, next, onSignedIn, dark, startLabel = "Email me
     if (typed && !isEmail(email)) return setError("That email doesn't look right.");
     const penProblem = penNameError(penName);
     if (penProblem) return setError(penProblem);
+    if (penName.trim() && !profileSchema.safeParse(profile).success) return setError("Enter your first name so recipients recognize you.");
     setBusy(true);
     setError(null);
     try {
       const pen = penName.trim() || undefined;
-      const r = await api.signInStart(!typed && via ? { serial: via.serial, ticket: via.ticket, c: via.c, next, penName: pen } : { email: email.trim(), next, penName: pen });
+      const r = await api.signInStart(!typed && via ? { serial: via.serial, ticket: via.ticket, c: via.c, next, penName: pen, ...(pen ? profile : {}) } : { email: email.trim(), next, penName: pen, ...(pen ? profile : {}) });
       setChallenge({ id: r.challenge, sentTo: r.sentTo });
       setCode("");
     } catch (err) {
@@ -155,7 +161,7 @@ export function CodeSignIn({ via, next, onSignedIn, dark, startLabel = "Email me
   if (!typed && via) {
     return (
       <div>
-        {askPenName && <div className="-mt-3 mb-3"><PenNameOffer value={penName} onChange={(v) => { setPenName(v); setError(null); }} dark={dark} label="Pick a pen name" /></div>}
+        {askPenName && <div className="-mt-3 mb-3"><PenNameOffer profile={profile} onProfileChange={setProfile} value={penName} onChange={(v) => { setPenName(v); setError(null); }} dark={dark} label="Pick a pen name" /></div>}
         <button type="button" className={`${primary} w-full`} disabled={busy} onClick={() => start()}>
           {busy ? "Sending…" : startLabel}
         </button>
@@ -173,7 +179,7 @@ export function CodeSignIn({ via, next, onSignedIn, dark, startLabel = "Email me
         <input className={`${field} !py-2.5`} type="email" inputMode="email" autoComplete="email" aria-label="Your email" placeholder="you@example.com" value={email} onChange={(e) => { setEmail(e.target.value); setError(null); }} />
         <button className={`${primary} shrink-0 whitespace-nowrap`} disabled={busy}>{busy ? "Sending…" : startLabel}</button>
       </div>
-      {askPenName && <PenNameOffer value={penName} onChange={(v) => { setPenName(v); setError(null); }} dark={dark} label="New here? Pick a pen name" />}
+      {askPenName && <PenNameOffer profile={profile} onProfileChange={setProfile} value={penName} onChange={(v) => { setPenName(v); setError(null); }} dark={dark} label="New here? Pick a pen name" />}
       {errorNote}
     </form>
   );
@@ -186,4 +192,33 @@ export function VerifiedMark({ className = "" }: { className?: string }) {
       ✓
     </span>
   );
+}
+
+
+export function NameFields({ value, onChange, dark }: { value: ProfileName; onChange: (v: ProfileName) => void; dark?: boolean }) {
+  const field = `field mt-1 !py-2 ${dark ? "!border-paper/30 !bg-paper/10 !text-paper" : ""}`;
+  return <div className="mt-3">
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="block text-sm">First name<input className={field} autoComplete="given-name" maxLength={80} required value={value.firstName} onChange={e => onChange({ ...value, firstName: e.target.value })} /></label>
+      <label className="block text-sm">Last name (optional)<input className={field} autoComplete="family-name" maxLength={80} value={value.lastName} onChange={e => onChange({ ...value, lastName: e.target.value })} /></label>
+    </div>
+    <p className={`mt-2 text-xs ${dark ? "text-paper/70" : "text-muted"}`}>Recipients see this name in invitations you send, so they can recognize you. Public stories use your pen name.</p>
+  </div>;
+}
+
+export function ProfileForm({ me }: { me: Me }) {
+  const { setMe } = useMe();
+  const [value, setValue] = useState<ProfileName>({ firstName: me.firstName ?? "", lastName: me.lastName ?? "" });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  return <form onSubmit={async e => {
+    e.preventDefault(); setBusy(true); setMessage(null);
+    try { const saved = await api.saveProfile(value); setMe(saved.me); setMessage("Name saved."); }
+    catch (err) { setMessage((err as Error).message); }
+    finally { setBusy(false); }
+  }}>
+    <NameFields value={value} onChange={setValue} />
+    <button className="btn btn-primary mt-4" disabled={busy}>{busy ? "Saving…" : "Save my name"}</button>
+    {message && <p role="status" className="mt-2 text-sm">{message}</p>}
+  </form>;
 }

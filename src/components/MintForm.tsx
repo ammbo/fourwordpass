@@ -1,8 +1,9 @@
+import { profileSchema, type ProfileName } from "../../shared/names";
 import { payoutDescription } from "../../shared/payments";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { checkFourWords, isEmail } from "../../shared/words";
-import { VerifiedMark, penNameError, useMe } from "../account";
+import { NameFields, VerifiedMark, penNameError, useMe } from "../account";
 import { api, useLoad, type MintBody } from "../api";
 import { Checkout } from "./Checkout";
 import { WordInput } from "./WordInput";
@@ -40,6 +41,7 @@ export function MintForm({ fork }: Props) {
   const creatorEmail = me ? me.email : email;
   const signature = handle && signAs ? handle : penName.trim();
   // Signed out, the pen name can become an account: the creator-key email carries the link that proves it's you.
+  const [profile, setProfile] = useState<ProfileName>({ firstName: "", lastName: "" });
   const [makeMine, setMakeMine] = useState(false);
   const wantsAccount = !me && makeMine && !!penName.trim();
 
@@ -51,6 +53,7 @@ export function MintForm({ fork }: Props) {
     if (!isEmail(creatorEmail)) return "We need your email for your creator key.";
     if (!toWild && recipient.trim().toLowerCase() === creatorEmail.trim().toLowerCase()) return "Send it to someone else. That's the whole game.";
     if (!accepted) return "Confirm you're 18 or older and agree to the terms before checkout.";
+    if (wantsAccount && !profileSchema.safeParse(profile).success) return "Enter your first name so recipients recognize you.";
     if (wantsAccount && penNameError(penName)) return penNameError(penName);
     // A paid release won't fail over a pen name, it just drops a taken one. Catch that before paying.
     if (signature && signature !== handle) {
@@ -64,7 +67,7 @@ export function MintForm({ fork }: Props) {
   const draft = (): MintBody => ({
     creatorEmail, words, theme: fork ? null : theme || null, goal: fork ? null : goal,
     firstRecipient: toWild ? null : recipient, penName: signature || null, showCity,
-    ...(wantsAccount ? { createAccount: true } : {}),
+    ...(wantsAccount ? { createAccount: true, ...profile } : {}),
   });
   const landOn = (out: { serial: string; creatorToken: string }, body: MintBody) =>
     navigate(`/b/${out.serial}?c=${out.creatorToken}&new=1${body.createAccount && body.penName ? `&account=${encodeURIComponent(body.penName)}` : ""}`);
@@ -205,6 +208,7 @@ export function MintForm({ fork }: Props) {
             </span>
           </label>
         )}
+        {wantsAccount && <NameFields value={profile} onChange={setProfile} />}
         <label className="flex items-center gap-2.5 text-sm">
           <input type="checkbox" className="h-4 w-4 accent-[#17402f]" checked={showCity} onChange={(e) => setShowCity(e.target.checked)} />
           <span>

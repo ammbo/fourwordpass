@@ -40,6 +40,7 @@ export type BillRow = {
 };
 
 export type PassRow = {
+  sender_name: string | null;
   id: string;
   bill_id: string;
   kind: "mint" | "fork" | "pass" | "claim";
@@ -94,6 +95,8 @@ export type HopRow = {
 };
 
 export type UserRow = {
+  first_name: string | null;
+  last_name: string | null;
   id: string;
   email: string;
   pid: string;

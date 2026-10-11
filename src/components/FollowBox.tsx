@@ -1,3 +1,4 @@
+import { profileSchema, type ProfileName } from "../../shared/names";
 import { useState } from "react";
 import { Link } from "wouter";
 import type { FollowPreference, HolderTicket } from "../../shared/types";
@@ -20,6 +21,7 @@ export function FollowBox({ serial, compact, dark, ticket }: { serial: string; c
   const [joining, setJoining] = useState(false);
   // Typing your email is a chance to make an account: one emailed tap confirms both.
   const [penName, setPenName] = useState("");
+  const [profile, setProfile] = useState<ProfileName>({ firstName: "", lastName: "" });
   const [offered, setOffered] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const as = typed ? "email" : me ? "account" : ticket ? "ticket" : "email";
@@ -27,11 +29,12 @@ export function FollowBox({ serial, compact, dark, ticket }: { serial: string; c
   const follow = async (who: "email" | "account" | "ticket") => {
     if (who === "email" && !isEmail(email)) return setError("That email doesn't look right.");
     const pen = who === "email" && !me ? penName.trim() : "";
+    if (pen && !profileSchema.safeParse(profile).success) return setError("Enter your first name so recipients recognize you.");
     if (pen && penNameError(pen)) return setError(penNameError(pen));
     setState("busy");
     setError(null);
     try {
-      const r = await api.follow(serial, who === "email" ? { email, ...(pen ? { penName: pen } : {}) } : who === "ticket" ? { ticket: ticket!.token } : {}, pref);
+      const r = await api.follow(serial, who === "email" ? { email, ...(pen ? { penName: pen, ...profile } : {}) } : who === "ticket" ? { ticket: ticket!.token } : {}, pref);
       setOffered(r.account ? pen : null);
       setState(r.verified ? "done" : "confirm");
     } catch (err) {
@@ -103,7 +106,7 @@ export function FollowBox({ serial, compact, dark, ticket }: { serial: string; c
               Follow
             </button>
           </div>
-          {!me && <PenNameOffer value={penName} onChange={(v) => { setPenName(v); setError(null); }} dark={dark} />}
+          {!me && <PenNameOffer profile={profile} onProfileChange={setProfile} value={penName} onChange={(v) => { setPenName(v); setError(null); }} dark={dark} />}
         </form>
       ) : (
         <button type="button" className={`btn w-full !py-2.5 text-sm ${dark ? "bg-paper text-ink" : "btn-primary"}`} disabled={state === "busy"} onClick={() => follow(as)}>

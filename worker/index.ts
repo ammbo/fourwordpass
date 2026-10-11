@@ -1,3 +1,4 @@
+import { optionalProfileFields, profileSchema } from "../shared/names";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -30,7 +31,7 @@ const mintSchema = z.object({
   creatorEmail: emailSchema.optional(),
   words: z.string().max(90), theme: z.string().max(140).nullish(), goal: z.number().int().min(2).max(100_000).nullish(),
   firstRecipient: emailSchema.nullish(), penName: z.string().max(24).nullish(), showCity: z.boolean().optional(),
-  createAccount: z.boolean().optional(),
+  ...optionalProfileFields, createAccount: z.boolean().optional(),
 });
 app.use("/api/*", bodyLimit({maxSize: 32_768, onError: c => c.json({error: "That request is too large."},413)}));
 
@@ -162,14 +163,15 @@ async function mintInput(c: Parameters<typeof currentUser>[0], body: z.infer<typ
   const user = await currentUser(c);
   // Signed in, there's already an account; otherwise the creator-key email can offer one.
   const draft = { ...rest, ...(createAccount && !user ? { createAccount: true } : {}) };
-  const creatorEmail = draft.creatorEmail ?? user?.email;
+  const creatorEmail = user?.email ?? draft.creatorEmail;
+  const inviterName = user?.first_name ? [user.first_name, user.last_name].filter(Boolean).join(" ") : undefined;
   if (!creatorEmail) throw new UserError("We need your email for your creator key.");
   if (free) {
     if (!user?.is_admin) throw new UserError("Only an admin can release a buck without checkout.", 403);
-    return { ...draft, creatorEmail, orderId: `COMP-${newId()}`, recoveryKey: randomToken(), fork, compedBy: user.id };
+    return { ...draft, inviterName, creatorEmail, orderId: `COMP-${newId()}`, recoveryKey: randomToken(), fork, compedBy: user.id };
   }
   if (!orderId || !recoveryKey) throw new UserError("Finish checkout first.", 402);
-  return { orderId, recoveryKey, ...draft, creatorEmail, fork };
+  return { orderId, recoveryKey, ...draft, inviterName, creatorEmail, fork };
 }
 
 app.post("/api/bills", async (c) => {
@@ -222,7 +224,7 @@ app.post("/api/bills/:serial/repass", async (c) => {
 
 app.post("/api/bills/:serial/claim", async (c) => {
   await limit(c.env.RL_WRITE, `claim:${ip(c.req.raw)}`);
-  const { email, penName } = await readBody(c, z.object({email: emailSchema.optional(), penName: z.string().max(64).optional()}));
+  const { email, penName, firstName, lastName } = await readBody(c, z.object({...optionalProfileFields, email: emailSchema.optional(), penName: z.string().max(64).optional()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   const user = await currentUser(c);
@@ -231,7 +233,7 @@ app.post("/api/bills/:serial/claim", async (c) => {
   const pen = !user && penName?.trim() ? await penNameFor(c.env, penName, engine.validateEmail(claimer, "Your email")) : null;
   if (pen && "error" in pen) throw new UserError(pen.error, 409);
   const claimed = await engine.claimFromWild(c.env, ctxOf(c), bill, claimer);
-  const account = pen ? await startSignIn(c.env, claimer, `/b/${bill.serial}`, pen.name, false).catch(() => null) : null;
+  const account = pen ? await startSignIn(c.env, claimer, `/b/${bill.serial}`, pen.name, false, firstName?.trim() ? profileSchema.parse({ firstName, lastName }) : undefined).catch(() => null) : null;
   return c.json({ ...claimed, account: account && pen ? { ...account, penName: pen.name } : null });
 });
 
@@ -273,7 +275,7 @@ app.post("/api/bills/:serial/finale", async (c) => {
  */
 app.post("/api/bills/:serial/follow", async (c) => {
   await limit(c.env.RL_WRITE, `follow:${ip(c.req.raw)}`);
-  const body = await readBody(c, z.object({email: emailSchema.optional(), ticket: z.string().max(200).optional(), preference: z.enum(["every_hop","on_end"]), penName: z.string().max(64).optional()}));
+  const body = await readBody(c, z.object({...optionalProfileFields, email: emailSchema.optional(), ticket: z.string().max(200).optional(), preference: z.enum(["every_hop","on_end"]), penName: z.string().max(64).optional()}));
   const bill = await getBillBySerial(c.env, c.req.param("serial"));
   if (!bill) throw new UserError("No bill by that serial.", 404);
   const user = await currentUser(c);
@@ -282,9 +284,9 @@ app.post("/api/bills/:serial/follow", async (c) => {
     // A pen name asks for an account too: the confirmation email offers it, and one tap does both.
     const pen = !user && body.penName?.trim() ? await penNameFor(c.env, body.penName, typed) : null;
     if (pen && "error" in pen) throw new UserError(pen.error, 409);
-    const { offered } = await engine.follow(c.env, bill, typed, body.preference, pen?.name ?? null);
+    const { offered } = await engine.follow(c.env, bill, typed, body.preference, pen?.name ?? null, body.firstName?.trim() ? profileSchema.parse(body) : undefined);
     // No confirmation went out (already sent recently, or opted out), so the offer travels on its own.
-    const account = pen && !offered ? !!(await startSignIn(c.env, typed, `/b/${bill.serial}`, pen.name, false).catch(() => null)) : offered;
+    const account = pen && !offered ? !!(await startSignIn(c.env, typed, `/b/${bill.serial}`, pen.name, false, body.firstName?.trim() ? profileSchema.parse(body) : undefined).catch(() => null)) : offered;
     return c.json({ ok: true, verified: false, account });
   }
   const proven = typed ?? (body.ticket ? (await passFromTicket(c.env, bill, body.ticket))?.recipient_email : user?.email);

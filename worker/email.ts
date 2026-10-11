@@ -14,6 +14,7 @@ export type Mail = {
   kind: string;
   billId?: string;
   serial?: string;           // printed above the heading
+  senderName?: string;         // a participant name for a private invitation; the sending address stays ours
   subject: string;
   preheader?: string;        // inbox preview text; defaults to the first paragraph
   heading: string;
@@ -120,7 +121,7 @@ async function deliverMail(env: Env, m: Mail): Promise<boolean> {
   }
   try {
     const res = await env.EMAIL.send({
-      from: { email: env.MAIL_FROM, name: SITE_NAME },
+      from: { email: env.MAIL_FROM, name: m.senderName ? `${m.senderName} via ${SITE_NAME}` : SITE_NAME },
       to: m.to,
       subject: m.subject,
       html: renderHtml(m, notice),

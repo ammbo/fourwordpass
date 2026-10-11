@@ -19,6 +19,7 @@ async function req<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export type MintBody = {
+  firstName?: string; lastName?: string;
   orderId?: string;
   recoveryKey?: string;
   /** A signed-in admin's release without checkout. */
@@ -52,12 +53,12 @@ export const api = {
   contribute: (serial: string, body: { t: string; words: string; next: string | null; note?: string; penName?: string; showCity: boolean; aiAssisted: boolean }) =>
     req<{ state: "wild" | "in_transit" }>(`/api/bills/${serial}/contribute`, body),
   suggest: (serial: string, body: { t?: string; c?: string; mode?: "finale" }) => req<{ options: string[]; left?: number }>(`/api/bills/${serial}/suggest`, body),
-  claim: (serial: string, email: string | null, penName?: string) =>
-    req<{ token: string; account: PendingAccount | null }>(`/api/bills/${serial}/claim`, { ...(email ? { email } : {}), ...(penName ? { penName } : {}) }),
+  claim: (serial: string, email: string | null, penName?: string, profile?: { firstName: string; lastName: string }) =>
+    req<{ token: string; account: PendingAccount | null }>(`/api/bills/${serial}/claim`, { ...profile, ...(email ? { email } : {}), ...(penName ? { penName } : {}) }),
   decline: (serial: string, t: string) => req<{ state: "returned" | "wild" }>(`/api/bills/${serial}/decline`, { t }),
   repass: (serial: string, body: { t?: string; c?: string; next: string | null }) => req<{ state: "wild" | "in_transit" }>(`/api/bills/${serial}/repass`, body),
   /** By typed email (confirmation link), by holder ticket, or as the signed-in account (no fields). */
-  follow: (serial: string, as: { email?: string; ticket?: string; penName?: string }, preference: FollowPreference) =>
+  follow: (serial: string, as: { firstName?: string; lastName?: string; email?: string; ticket?: string; penName?: string }, preference: FollowPreference) =>
     req<{ ok: true; verified: boolean; account?: boolean }>(`/api/bills/${serial}/follow`, { ...as, preference }),
   finale: (serial: string, c: string, words: string) => req<{ ok: true }>(`/api/bills/${serial}/finale`, { c, words }),
   resend: (serial: string) => req<{ ok: true }>(`/api/bills/${serial}/resend`, {}),
@@ -66,7 +67,8 @@ export const api = {
 
   me: () => req<{ me: Me | null }>("/api/me"),
   /** Email a code to a typed address, or to the one a holder ticket or creator key was sent to. */
-  signInStart: (body: { email?: string; serial?: string; ticket?: string; c?: string; next?: string | null; penName?: string }) =>
+  saveProfile: (body: { firstName: string; lastName: string }) => req<{ me: Me }>("/api/me/profile", body),
+  signInStart: (body: { firstName?: string; lastName?: string; email?: string; serial?: string; ticket?: string; c?: string; next?: string | null; penName?: string }) =>
     req<{ challenge: string; sentTo: string }>("/api/auth/start", body),
   signInVerify: (body: { challenge: string; code?: string; link?: string }) => req<{ me: Me; penNameTaken: string | null }>("/api/auth/verify", body),
   signOut: () => req<{ ok: true }>("/api/auth/signout", {}),

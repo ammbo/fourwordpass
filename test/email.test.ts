@@ -72,3 +72,10 @@ it("uses live footer copy without relabeling queued sandbox mail", async () => {
   await sendMail(env, {...mail, deliveryKey: "original-test", paymentMode: "sandbox"});
   expect(send.mock.calls[1][0].text).toContain("Sandbox beta: test money");
 });
+
+it("identifies the participant in invitation mail while keeping the platform sending address", async () => {
+  const send = vi.fn(async (_m: { from: {name:string;email:string}; html:string }) => ({messageId:'named'}));
+  const env = {PAYPAL_MODE:'mock',EMAIL_MODE:'send',MAIL_FROM:'buck@fourwordpass.com',EMAIL:{send},DB:new DB()} as unknown as Env;
+  await sendMail(env,{to:'friend@example.com',kind:'holder',senderName:'Jane Smith',subject:'Jane invited you',heading:'Your turn',paragraphs:['Jane Smith passed you a story.']});
+  expect(send.mock.calls[0][0].from).toEqual({email:'buck@fourwordpass.com',name:'Jane Smith via Four Word Pass'});
+});

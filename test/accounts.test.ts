@@ -158,7 +158,7 @@ describe('an account offer wherever an email is typed',()=>{
 
   it('follow: one confirmation email, and one tap confirms the follow and creates the account',async()=>{
     wild();
-    const res=await call('/api/bills/FWP-0003/follow',{body:{email:'reader@example.com',preference:'every_hop',penName:'Night Owl'}});
+    const res=await call('/api/bills/FWP-0003/follow',{body:{email:'reader@example.com',preference:'every_hop',penName:'Night Owl',firstName:'Jo',lastName:'March'}});
     expect(await res.json()).toEqual({ok:true,verified:false,account:true});
     // Nothing exists until the address is proven.
     expect(db.sqlite.prepare("SELECT COUNT(*) n FROM users").get()?.n).toBe(0);
@@ -171,7 +171,7 @@ describe('an account offer wherever an email is typed',()=>{
     expect((await call('/api/auth/verify',{body:{challenge:ch,code:'123456'}})).status).toBe(400);
     const done=await verifyLink(mail.button!.url);
     expect(done.status).toBe(200);
-    expect(((await done.json()) as any).me).toMatchObject({email:'reader@example.com',handle:'Night Owl'});
+    expect(((await done.json()) as any).me).toMatchObject({email:'reader@example.com',handle:'Night Owl',firstName:'Jo',lastName:'March'});
     expect(db.sqlite.prepare("SELECT verified,preference FROM follows WHERE email='reader@example.com'").get()).toMatchObject({verified:1,preference:'every_hop'});
     expect((await getBill(env,'w'))!.follower_count).toBe(1);
   });
@@ -195,7 +195,7 @@ describe('an account offer wherever an email is typed',()=>{
   });
   it('claim: the claimer gets a code to finish the account on the page',async()=>{
     wild();
-    const res=await call('/api/bills/FWP-0003/claim',{body:{email:'claimer@example.com',penName:'Lark'}});
+    const res=await call('/api/bills/FWP-0003/claim',{body:{email:'claimer@example.com',penName:'Lark',firstName:'Robin',lastName:''}});
     const out=await res.json() as {token:string;account:{challenge:string;sentTo:string;penName:string}};
     expect(out.token).toBeTruthy();
     expect(out.account).toMatchObject({sentTo:'c•••@e•••.com',penName:'Lark'});
@@ -203,10 +203,10 @@ describe('an account offer wherever an email is typed',()=>{
     expect(mail.heading).toBe('Make it yours, Lark.');
     expect(db.sqlite.prepare("SELECT COUNT(*) n FROM users").get()?.n).toBe(0);
     const done=await call('/api/auth/verify',{body:{challenge:out.account.challenge,code:lastCode().code}});
-    expect(((await done.json()) as any).me).toMatchObject({email:'claimer@example.com',handle:'Lark'});
+    expect(((await done.json()) as any).me).toMatchObject({email:'claimer@example.com',handle:'Lark',firstName:'Robin',lastName:''});
   });
   it('release: the creator-key email carries the offer, and a replayed release keeps its link',async()=>{
-    const input={orderId:'MOCKORDER-offer',recoveryKey:'o'.repeat(32),creatorEmail:'maker@example.com',words:'amber robots chase comets',firstRecipient:null,penName:'Tin Poet',createAccount:true};
+    const input={orderId:'MOCKORDER-offer',recoveryKey:'o'.repeat(32),creatorEmail:'maker@example.com',words:'amber robots chase comets',firstRecipient:null,penName:'Tin Poet',createAccount:true,firstName:'Sam',lastName:'Poet'};
     await env.DB.prepare("INSERT INTO checkout_orders(order_id,recovery_hash,paypal_mode,purpose,created_at) VALUES (?,?,'mock','mint',?)").bind(input.orderId,await recoveryHash(input.recoveryKey),Date.now()).run();
     await engine.mintBill(env,ctx,place,input);
     await engine.mintBill(env,ctx,place,input);
@@ -214,7 +214,7 @@ describe('an account offer wherever an email is typed',()=>{
     expect(new Set(creatorMails.map(m=>m.secondary!.url)).size).toBe(1);
     expect(db.sqlite.prepare("SELECT COUNT(*) n FROM auth_challenges").get()?.n).toBe(1);
     const done=await verifyLink(creatorMails[0].secondary!.url);
-    expect(((await done.json()) as any).me).toMatchObject({email:'maker@example.com',handle:'Tin Poet'});
+    expect(((await done.json()) as any).me).toMatchObject({email:'maker@example.com',handle:'Tin Poet',firstName:'Sam',lastName:'Poet'});
     // The foreword was signed before the account existed; claiming the name marks it.
     expect(db.sqlite.prepare("SELECT pen_name,pen_verified FROM hops WHERE id LIKE 'opening:%'").get()).toMatchObject({pen_name:'Tin Poet',pen_verified:1});
   });
@@ -306,4 +306,68 @@ describe('admin releases without checkout',()=>{
     expect(dash.following[0]).toMatchObject({serial,preference:'every_hop'});
     expect((await getPass(env,pass.id))!.paypal_mode).toBe('mock');
   });
+});
+
+describe('private invitation names', () => {
+  it('keeps offered names pending until proof and never renames an existing profile from an offer', async () => {
+    const start = await (await call('/api/auth/start', {body:{email:'name@example.com',penName:'Night Writer',firstName:'  Jane  ',lastName:' O’Neill '}})).json() as {challenge:string};
+    expect(db.sqlite.prepare('SELECT COUNT(*) n FROM users').get()?.n).toBe(0);
+    const verified = await call('/api/auth/verify', {body:{challenge:start.challenge,code:lastCode().code}});
+    expect((await verified.json() as any).me).toMatchObject({firstName:'Jane',lastName:'O’Neill',handle:'Night Writer'});
+    db.sqlite.exec('UPDATE auth_challenges SET created_at=created_at-60000');
+    const second = await (await call('/api/auth/start', {body:{email:'name@example.com',firstName:'Impostor',lastName:'Changed'}})).json() as {challenge:string};
+    const again = await call('/api/auth/verify', {body:{challenge:second.challenge,code:lastCode().code}});
+    expect((await again.json() as any).me).toMatchObject({firstName:'Jane',lastName:'O’Neill'});
+  });
+
+  it('lets only the signed-in owner edit a valid name, without changing public signatures', async () => {
+    expect((await call('/api/me/profile',{body:{firstName:'Jane'}})).status).toBe(401);
+    const cookie = await signIn('profile@example.com');
+    for (const firstName of ['', '   ', 'x'.repeat(81), '<b>Jane</b>', 'Jane\nInjected']) {
+      expect((await call('/api/me/profile',{cookie,body:{firstName}})).status).toBe(400);
+    }
+    expect((await call('/api/me/profile',{cookie,origin:'https://evil.example',body:{firstName:'Changed'}})).status).toBe(401);
+    await call('/api/me/handle',{cookie,body:{handle:'Public Writer'}});
+    const saved = await call('/api/me/profile',{cookie,body:{firstName:'李',lastName:''}});
+    expect((await saved.json() as any).me).toMatchObject({firstName:'李',lastName:'',handle:'Public Writer'});
+  });
+
+  it('names a holder invitation and snapshots it without putting the real name in the public story', async () => {
+    const bill = (await heldBill('keeper@example.com'))!;
+    const cookie = await signIn('keeper@example.com');
+    await call('/api/me/profile',{cookie,body:{firstName:'Jane',lastName:'Smith'}});
+    await engine.contribute(env,ctx,place,bill,{words:'red blue green orange',next:'friend@example.com'});
+    const pass = db.sqlite.prepare("SELECT * FROM passes WHERE recipient_email='friend@example.com'").get()!;
+    expect(pass.sender_name).toBe('Jane Smith');
+    await engine.applyPayoutState(env,ctx,(await getPass(env,pass.id as string))!,{status:"SUCCESS",itemId:"item-name",transactionId:"txn-name",error:null});
+    await engine.resendHolderLink(env,(await getBill(env,bill.id))!);
+    const mail = vi.mocked(sendMail).mock.calls.map(([,m])=>m).find(m=>m.to==='friend@example.com' && m.kind.startsWith('holder'))!;
+    expect(mail.senderName).toBe('Jane Smith');
+    expect(mail.subject).toContain('Jane Smith');
+    expect(mail.paragraphs.join(' ')).toContain('Jane Smith passed you');
+    const pub = await (await call('/api/bills/FWP-0001')).text();
+    expect(pub).not.toContain('Jane');
+    expect(pub).not.toContain('keeper@example.com');
+  });
+
+  it('does not use an account name when a stranger types its email as a creator', async () => {
+    const cookie = await signIn('creator@example.com');
+    await call('/api/me/profile',{cookie,body:{firstName:'Private',lastName:'Creator'}});
+    const recoveryKey = crypto.randomUUID();
+    const checkout = await (await call("/api/checkout",{body:{purpose:"mint",recoveryKey}})).json() as {orderId:string};
+    const result = await call('/api/bills',{body:{creatorEmail:'creator@example.com',words:'red blue green orange',firstRecipient:'friend@example.com',orderId:checkout.orderId,recoveryKey,inviterName:'Private Creator'}});
+    expect(result.status).toBe(200);
+    expect(db.sqlite.prepare("SELECT sender_name FROM passes WHERE recipient_email='friend@example.com'").get()?.sender_name).toBeNull();
+  });
+});
+
+
+it('uses the signed-in creator for named first invitations, ignoring a different typed creator email', async () => {
+  const cookie = await signIn('admin@example.com');
+  await call('/api/me/profile',{cookie,body:{firstName:'Jane',lastName:'Smith'}});
+  db.sqlite.exec("UPDATE users SET is_admin=1 WHERE email='admin@example.com'");
+  const result = await call('/api/bills',{cookie,body:{free:true,creatorEmail:'different@example.com',words:'red blue green orange',firstRecipient:'friend@example.com',inviterName:'Fake Name'}});
+  expect(result.status).toBe(200);
+  expect(db.sqlite.prepare('SELECT creator_email FROM bills').get()?.creator_email).toBe('admin@example.com');
+  expect(db.sqlite.prepare('SELECT sender_name FROM passes').get()?.sender_name).toBe('Jane Smith');
 });

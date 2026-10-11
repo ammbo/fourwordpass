@@ -1,3 +1,4 @@
+import type { ProfileName } from "../shared/names";
 // The bill lifecycle. Every state change goes through here.
 //
 // Sandbox/mock model (new live payments are gated pending the held-dollar design):
@@ -102,6 +103,9 @@ async function addDiary(env: Env, bill: BillRow, kind: string, text: string, opt
 // ====================================================================== mint / fork
 
 export type MintInput = {
+  /** Server-only: the signed-in creator's name, never taken from a request body. */
+  inviterName?: string;
+  firstName?: string; lastName?: string;
   orderId: string;
   recoveryKey: string;
   creatorEmail: string;
@@ -212,7 +216,7 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
   // A paid release never fails over its account offer; a pen name that can't be claimed just isn't offered.
   const wanted = input.createAccount && !signed.verified && input.penName ? await penNameFor(env, input.penName, creatorEmail) : null;
   const offer = wanted && "name" in wanted && !(await challengeLimit(env, creatorEmail, false))
-    ? { handle: wanted.name, ...(await createChallenge(env, creatorEmail, { id: `offer:${billId}`, handle: wanted.name, next: `/b/${bill.serial}`, ttl: OFFER_TTL })) }
+    ? { handle: wanted.name, ...(await createChallenge(env, creatorEmail, { firstName: input.firstName, lastName: input.lastName, id: `offer:${billId}`, handle: wanted.name, next: `/b/${bill.serial}`, ttl: OFFER_TTL })) }
     : null;
   // Queue the creator key before returning success, even if immediate delivery is interrupted.
   await queueMail(env, {
@@ -241,7 +245,7 @@ export async function mintBill(env: Env, ctx: Ctx, place: Place, input: MintInpu
   try {
     if (bill.status === "in_transit" && !bill.active_pass_id && firstRecipient) {
       // A rejected first address sends the paid story wild; the creator still gets their key.
-      await startPass(env, ctx, bill, { kind: parent ? "fork" : "mint", email: firstRecipient, fromHopId: hopId, senderPassId: null }, false);
+      await startPass(env, ctx, bill, { kind: parent ? "fork" : "mint", email: firstRecipient, fromHopId: hopId, senderPassId: null, senderName: input.inviterName }, false);
     } else if (bill.status === "in_transit" && !bill.active_pass_id) {
       await releaseToWild(env, ctx, bill, hopId, null);
     }
@@ -270,7 +274,7 @@ async function startPass(
   env: Env,
   ctx: Ctx,
   bill: BillRow,
-  p: { kind: PassRow["kind"]; email: string; fromHopId: string | null; senderPassId: string | null },
+  p: { kind: PassRow["kind"]; email: string; fromHopId: string | null; senderPassId: string | null; senderName?: string },
   throwOnFailure = true,
 ): Promise<PassRow> {
   const passId = newId();
@@ -288,13 +292,23 @@ async function startPass(
         : "That person has been passed plenty of bucks today. Pick someone else, or release it to the wild.", 429);
     }
   }
+  // Holder/creator capabilities authorize a repass. A first handoff must use the
+  // signed-in creator's server-supplied name, not a lookup of an unproven typed email.
+  let senderName = p.senderName ?? null;
+  if (p.kind === "pass") {
+    const keeper = p.senderPassId ? await getPass(env, p.senderPassId) : null;
+    const email = keeper?.recipient_email ?? bill.creator_email;
+    const sender = email ? await env.DB.prepare("SELECT first_name,last_name FROM users WHERE email = ?")
+      .bind(email).first<{ first_name: string | null; last_name: string | null }>() : null;
+    senderName = sender?.first_name ? [sender.first_name, sender.last_name].filter(Boolean).join(" ") : null;
+  }
   // D1 batch is a transaction: either both reservation and pass exist, or neither does.
   const reserved = await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO passes (id, bill_id, kind, recipient_email, recipient_pid, from_hop_id, sender_pass_id, status, paypal_mode, next_poll_at, created_at)
-       SELECT ?,?,?,?,?,?,?,'pending',?,?,? WHERE EXISTS
+      `INSERT INTO passes (id, bill_id, kind, recipient_email, recipient_pid, from_hop_id, sender_pass_id, status, paypal_mode, next_poll_at, created_at, sender_name)
+       SELECT ?,?,?,?,?,?,?,'pending',?,?,?,? WHERE EXISTS
        (SELECT 1 FROM bills WHERE id = ? AND status = ? AND version = ? AND active_pass_id IS NULL)`,
-    ).bind(passId, bill.id, p.kind, p.email, pid, p.fromHopId, p.senderPassId, mode, t + 3000, t, bill.id, bill.status, bill.version),
+    ).bind(passId, bill.id, p.kind, p.email, pid, p.fromHopId, p.senderPassId, mode, t + 3000, t, senderName, bill.id, bill.status, bill.version),
     env.DB.prepare(`UPDATE bills SET status = 'in_transit', active_pass_id = ?, version = version + 1
        WHERE id = ? AND EXISTS (SELECT 1 FROM passes WHERE id = ?)`)
       .bind(passId, bill.id, passId),
@@ -524,7 +538,9 @@ async function emailHolder(env: Env, pass: PassRow, resend = false) {
   const url = appUrl(env, `/b/${bill.serial}?t=${await capToken(env, "holder", pass.id)}`);
   // A claimer chose this bill on the site. Anyone else was named by the last holder and may never have heard of us.
   const claimed = pass.kind === "claim";
-  const signedAs = !claimed && pass.from_hop_id ? (await getHop(env, pass.from_hop_id))?.pen_name : null;
+  const hop = !claimed && pass.from_hop_id ? await getHop(env, pass.from_hop_id) : null;
+  const signedAs = hop?.pen_name;
+  const senderName = claimed ? null : pass.sender_name;
   const money =
     pass.paypal_mode === "sandbox"
       ? "A $1 PayPal sandbox payout came with me. It's test money, so PayPal won't email you about it: this email is your way in."
@@ -537,16 +553,17 @@ async function emailHolder(env: Env, pass: PassRow, resend = false) {
     kind: resend ? "holder_resend" : "holder",
     billId: bill.id,
     serial: bill.serial,
-    subject: claimed ? `You claimed ${pers.name}. Add your four words.` : "Someone passed you a story. Add four words.",
+    senderName: senderName ?? undefined,
+    subject: claimed ? `You claimed ${pers.name}. Add your four words.` : senderName ? `${senderName} invited you to a story on Four Word Pass` : "Someone passed you a story. Add four words.",
     preheader: claimed
       ? "You have 24 hours to add four words before it wanders back to the wild."
-      : "A dollar is carrying a story from person to person. Add four words, then pass it on. About a minute, no account.",
+      : `${senderName ? `${senderName} passed you a story. ` : ""}Add four words, then pass it on. About a minute, no account.`,
     image: claimed ? undefined : "share-card",
     heading: claimed ? `${bill.serial} is yours.` : "You've been passed the buck.",
     paragraphs: [
       ...(claimed
         ? []
-        : [`Someone passed you a buck on Four Word Pass: a dollar that carries a story, written four words at a time by whoever holds it.${signedAs ? ` They signed their words “${signedAs}.”` : ""}`]),
+        : [`${senderName ?? "Someone"} passed you a buck on Four Word Pass: a dollar that carries a story, written four words at a time by whoever holds it.${signedAs ? ` They signed their words “${signedAs}.”` : ""}`]),
       `I'm ${pers.name}, the buck. ${n <= 1 ? "My story has only just started" : `${n} strangers have written my story so far${places?.n ? `, across ${places.n} ${places.n === 1 ? "place" : "places"}` : ""}`}. Now it's your turn: add exactly four words, then pass me on.`,
       `${money} No account or app needed; it takes about a minute.`,
     ],
@@ -904,7 +921,7 @@ export async function returnToWild(env: Env, bill: BillRow) {
  * also offers an account: one tap proves the address, confirms the follow and claims the name.
  * Returns whether that offer went out, so the caller can send it separately when this email doesn't.
  */
-export async function follow(env: Env, bill: BillRow, emailIn: string, preference: FollowPreference, penName: string | null = null): Promise<{ offered: boolean }> {
+export async function follow(env: Env, bill: BillRow, emailIn: string, preference: FollowPreference, penName: string | null = null, profile?: ProfileName): Promise<{ offered: boolean }> {
   const email = validateEmail(emailIn);
   const id = newId();
   const pid = await participantId(env, email);
@@ -923,7 +940,7 @@ export async function follow(env: Env, bill: BillRow, emailIn: string, preferenc
   const manage = appUrl(env, `/f/${row.id}?t=${await capToken(env,"follow",row.id)}`);
   const name = personalityOf(bill).name;
   const offer = penName && !(await challengeLimit(env, email, false))
-    ? await createChallenge(env, email, { handle: penName, followId: row.id, next: `/b/${bill.serial}`, ttl: OFFER_TTL })
+    ? await createChallenge(env, email, { ...profile, handle: penName, followId: row.id, next: `/b/${bill.serial}`, ttl: OFFER_TTL })
     : null;
   await queueMail(env, {
     deliveryKey: `follow-confirm:${row.id}:${Math.floor(now() / HOUR)}`,

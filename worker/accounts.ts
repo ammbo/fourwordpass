@@ -2,6 +2,7 @@
 // Cloudflare Email Sending. Playing never needs an account: everything a dashboard shows is
 // found by participant id, so it includes whatever someone did as "a stranger" before signing up.
 
+import { optionalProfileFields, profileSchema, type ProfileName } from "../shared/names";
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
@@ -24,7 +25,7 @@ const MAX_DAILY_FAILURES = 10;
 
 type Ctx = Context<{ Bindings: Env }>;
 
-export const meOf = (u: UserRow): Me => ({ email: u.email, handle: u.handle, isAdmin: !!u.is_admin, createdAt: u.created_at });
+export const meOf = (u: UserRow): Me => ({ firstName: u.first_name, lastName: u.last_name, email: u.email, handle: u.handle, isAdmin: !!u.is_admin, createdAt: u.created_at });
 
 /** The signed-in account, or null. A cross-site write never counts as signed in. */
 export async function currentUser(c: Ctx): Promise<UserRow | null> {
@@ -80,11 +81,11 @@ export async function upsertUser(env: Env, emailIn: string): Promise<UserRow> {
  * Email a code and a link. With a pen name it's an account offer: the same proof creates the
  * account and claims the name, and it lasts a week, since nobody is necessarily waiting on it.
  */
-export async function startSignIn(env: Env, emailIn: string, next: string | null, handle: string | null = null, waitBetween = true): Promise<{ challenge: string; sentTo: string }> {
+export async function startSignIn(env: Env, emailIn: string, next: string | null, handle: string | null = null, waitBetween = true, profile?: ProfileName): Promise<{ challenge: string; sentTo: string }> {
   const email = validateEmail(emailIn, "Your email");
   const limited = await challengeLimit(env, email, waitBetween);
   if (limited) throw new UserError(limited, 429);
-  const ch = await createChallenge(env, email, { withCode: true, handle, next, ttl: handle ? OFFER_TTL : CODE_TTL });
+  const ch = await createChallenge(env, email, { ...profile, withCode: true, handle, next, ttl: handle ? OFFER_TTL : CODE_TTL });
   const code = ch.code!;
   const lasts = handle ? "for the next 7 days" : "for the next 15 minutes";
   await sendMail(env, {
@@ -108,7 +109,7 @@ export async function verifySignIn(env: Env, challengeId: string, proof: { code?
   const t = now();
   const ch = await env.DB.prepare("SELECT * FROM auth_challenges WHERE id = ?").bind(challengeId).first<{
     id: string; email: string; code_hash: string; link_hash: string; attempts: number; used_at: number | null;
-    handle: string | null; follow_id: string | null;
+    handle: string | null; follow_id: string | null; first_name: string | null; last_name: string | null;
   }>();
   if (!ch) throw new UserError("That sign-in link isn't valid. Send yourself a new code.");
   // Six digits are guessable given enough tries, so wrong codes are capped per address, not just per email sent.
@@ -134,6 +135,13 @@ export async function verifySignIn(env: Env, challengeId: string, proof: { code?
 
   const user = await upsertUser(env, ch.email);
   await linkHistory(env, user);
+  // Unverified offers can fill a new profile, but never rename an existing account.
+  if (ch.first_name && !user.first_name) {
+    await env.DB.prepare("UPDATE users SET first_name = ?, last_name = ? WHERE id = ? AND first_name IS NULL")
+      .bind(ch.first_name, ch.last_name ?? "", user.id).run();
+    const saved = (await env.DB.prepare("SELECT first_name,last_name FROM users WHERE id = ?").bind(user.id).first<{ first_name: string; last_name: string }>())!;
+    Object.assign(user, saved);
+  }
   // An offer's pen name is claimed only now that the address is proven. An existing pen name stays.
   let penNameTaken: string | null = null;
   if (ch.handle && !user.handle) {
@@ -276,7 +284,7 @@ export const accounts = new Hono<{ Bindings: Env }>();
 accounts.post("/auth/start", async (c) => {
   await limit(c.env.RL_WRITE, `auth:${ip(c.req.raw)}`);
   const body = await readBody(c, z.object({
-    email: z.string().max(254).optional(), serial: z.string().max(32).optional(), ticket: z.string().max(200).optional(),
+    ...optionalProfileFields, email: z.string().max(254).optional(), serial: z.string().max(32).optional(), ticket: z.string().max(200).optional(),
     c: z.string().max(256).optional(), next: z.string().max(300).nullish(), penName: z.string().max(64).optional(),
   }));
   let email = body.email;
@@ -289,7 +297,7 @@ accounts.post("/auth/start", async (c) => {
   // A pen name makes this an account offer; it's checked now and claimed once the address is proven.
   const pen = body.penName?.trim() ? await penNameFor(c.env, body.penName, validateEmail(email, "Your email")) : null;
   if (pen && "error" in pen) throw new UserError(pen.error, 409);
-  return c.json(await startSignIn(c.env, email ?? "", safeNext(body.next), pen?.name ?? null));
+  return c.json(await startSignIn(c.env, email ?? "", safeNext(body.next), pen?.name ?? null, true, body.firstName?.trim() ? profileSchema.parse(body) : undefined));
 });
 
 accounts.post("/auth/verify", async (c) => {
@@ -310,6 +318,15 @@ accounts.post("/auth/signout", async (c) => {
 accounts.get("/me", async (c) => {
   const user = await currentUser(c);
   return c.json({ me: user ? meOf(user) : null });
+});
+
+accounts.post("/me/profile", async (c) => {
+  const user = await requireUser(c);
+  await limit(c.env.RL_WRITE, `profile:${user.id}`);
+  const profile = await readBody(c, profileSchema);
+  await c.env.DB.prepare("UPDATE users SET first_name = ?, last_name = ? WHERE id = ?")
+    .bind(profile.firstName, profile.lastName, user.id).run();
+  return c.json({ me: meOf({ ...user, first_name: profile.firstName, last_name: profile.lastName }) });
 });
 
 /** Claim a pen name. Once it's yours, nobody else can sign with it. */
