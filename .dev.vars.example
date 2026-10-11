@@ -8,5 +8,13 @@ ADMIN_TOKEN=dev-admin
 PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 PAYPAL_WEBHOOK_ID=
+# Scoped sets selected by PAYPAL_MODE; generic names above are legacy sandbox only.
+PAYPAL_SANDBOX_CLIENT_ID=
+PAYPAL_SANDBOX_CLIENT_SECRET=
+PAYPAL_SANDBOX_WEBHOOK_ID=
+PAYPAL_LIVE_CLIENT_ID=
+PAYPAL_LIVE_CLIENT_SECRET=
+PAYPAL_LIVE_WEBHOOK_ID=
+# Live checkout/payout creation stays paused pending the held-dollar implementation.
 # Optional: better writing for the bill's voice. Without it, Workers AI is used.
 ANTHROPIC_API_KEY=

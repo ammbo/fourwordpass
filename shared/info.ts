@@ -1,8 +1,11 @@
+import type { PayPalMode } from "./types.ts";
+import { paymentNotice } from "./payments.ts";
+
 /** The site's public policies are shared by the React pages and crawler HTML. */
 export const OPERATOR_NAME = "Four Word Pass project";
 export const SUPPORT_EMAIL = "support@fourwordpass.com";
-export const POLICY_DATE = "October 9, 2026";
-export const POLICY_VERSION = "2026-10-09";
+export const POLICY_DATE = "October 10, 2026";
+export const POLICY_VERSION = "2026-10-10";
 
 export type InfoPage = {
   path: string;
@@ -105,4 +108,47 @@ export const INFO_LINKS = [
 /** Only trusted, repository-authored HTML is used in these policy sections. */
 export function infoHtml(page: InfoPage) {
   return `<p>Effective ${POLICY_DATE}</p><p>${page.intro}</p>${page.sections.map((s) => `<section id="${s.id}"><h2>${s.title}</h2>${s.html}</section>`).join("")}`;
+}
+
+/** Payment copy follows the same runtime mode as checkout, including crawler HTML. */
+export function infoPagesForMode(mode?: PayPalMode | null): Record<string, InfoPage> {
+  if (mode === "sandbox") return INFO_PAGES;
+  const notice = paymentNotice(mode);
+  const common = (text: string) => text
+    .replaceAll("during its sandbox beta", "during its beta")
+    .replaceAll("Payments are sandbox tests, but the information you submit and the emails we send are real.", `${notice} The information you submit and the emails we send are real.`)
+    .replaceAll("sandbox checkout and payout identifiers", "checkout and payout identifiers")
+    .replaceAll("stories and sandbox payments", "stories and payment records")
+    .replaceAll("sandbox checkout and payouts receive the details needed for test transactions", "checkout and payouts receive the details needed for transactions")
+    .replaceAll("sandbox test money, ", "")
+    .replaceAll("PayPal sandbox requirements", "PayPal requirements")
+    .replaceAll("confirmed sandbox handoff", "confirmed handoff")
+    .replaceAll("about sandbox checkout", "about checkout")
+    .replaceAll("The useful message comes from Four Word Pass; PayPal sandbox does not deliver its payment notifications to ordinary inboxes.", "Look for the message from Four Word Pass containing your private link.");
+  const pages = Object.fromEntries(Object.entries(INFO_PAGES).map(([path, page]) => [path, {
+    ...page, title: common(page.title), heading: common(page.heading), description: common(page.description),
+    eyebrow: common(page.eyebrow), intro: common(page.intro),
+    sections: page.sections.map(section => ({...section, title: common(section.title), html: common(section.html)})),
+  }]));
+  const replaceSection = (path: string, id: string, title: string, html: string) => {
+    pages[path].sections = pages[path].sections.map(section => section.id === id ? {id: "payments", title, html} : section);
+  };
+  replaceSection("/terms", "sandbox", "Payment availability", `<p>${notice}</p><p>App emails and public posts are real. Do not send money outside the app to participate or to fix a failed handoff. There are no cash prizes, investments, or promises of earnings.</p>`);
+  replaceSection("/terms", "availability", "Beta availability", `<p>The service is experimental and provided as available. Features, stories, delivery timing, and records may change, fail, or be reset. We may pause or discontinue the beta.</p><p>${notice} Contact support about a checkout or handoff problem; do not start another payment as a workaround.</p>`);
+  replaceSection("/support", "checkout", "Checkout or handoff trouble", `<p>${notice}</p><p>If a saved checkout is available, use its recovery action before starting another payment. Pending payouts remain reserved for reconciliation. Refresh the public story and report its serial and visible error to support. Never send money outside the app to resolve an issue.</p>`);
+  pages["/beta"] = {
+    path: "/beta", title: "Beta guide · Four Word Pass", heading: "Stories in progress.", eyebrow: "Beta guide",
+    description: "How to explore Four Word Pass, protect private links, and understand payment availability.",
+    intro: `${notice} Public posts and app emails are real.`,
+    sections: [
+      INFO_PAGES["/beta"].sections[0],
+      {id: "payments", title: "Payment availability", html: `<p>${notice}</p><p>Payment records retain their original environment label. An accepted, unclaimed payout is not proof that a recipient has received cash.</p>`},
+      {id: "try", title: "How to try it", html: `<p>Browse <a href="/wild">the wild</a> or <a href="/books">Open Books</a> without signing in. Keep private action links to yourself and invite only willing recipients.</p><p>${mode === "mock" ? "Local demo checkout and payouts are simulated; no card is needed." : notice}</p>`},
+    ],
+  };
+  return pages;
+}
+
+export function infoLinksForMode(mode?: PayPalMode | null) {
+  return INFO_LINKS.map(link => ({...link, label: link.path === "/beta" && mode !== "sandbox" ? "Beta guide" : link.label}));
 }

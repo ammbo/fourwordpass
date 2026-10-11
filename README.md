@@ -188,3 +188,17 @@ curl -X POST https://fourwordpass.com/api/admin/users -H "Authorization: Bearer 
 ## License
 
 [MIT](LICENSE)
+
+## Payment environment switch
+
+`PAYPAL_MODE` is the single runtime switch: `sandbox`, `live`, or `mock`. No frontend rebuild or second UI flag is required. It controls the API host, selected public client ID, server credentials, webhook verifier, test-card panel, card-only sandbox checkout, payment notices, FAQ, policies, metadata, footer links, and email copy. Mode is fetched from `/api/config`; secrets never reach the browser.
+
+| Mode | Credentials | Behavior |
+| --- | --- | --- |
+| `sandbox` | `PAYPAL_SANDBOX_CLIENT_ID`, `PAYPAL_SANDBOX_CLIENT_SECRET`, `PAYPAL_SANDBOX_WEBHOOK_ID` | Test card, sandbox API, test-money disclosures |
+| `live` | `PAYPAL_LIVE_CLIENT_ID`, `PAYPAL_LIVE_CLIENT_SECRET`, `PAYPAL_LIVE_WEBHOOK_ID` | Live API/config, no sandbox helper/copy; new checkout and payouts still paused |
+| `mock` | None | Explicitly labeled local simulation |
+
+Set the six credentials as Worker secrets, then change `PAYPAL_MODE` in the deployment environment. Generic `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, and `PAYPAL_WEBHOOK_ID` remain a sandbox-only compatibility fallback. Once any scoped sandbox credential is supplied, the complete scoped sandbox set must be used; it never mixes apps. Live mode never falls back to sandbox credentials. Register webhooks separately for each app using `scripts/paypal-webhook.mjs` with the matching mode and credentials. Existing orders/payouts retain their original mode, and reconciliation refuses a different environment. Use separate sandbox/live databases for a clean live ledger.
+
+This switch does **not** implement the planned held-dollar model or enable live money. The backend and UI continue to block new live payments. Historical test receipts, demo-history labels, and the ledger's environment column remain labeled in all modes. Static manifest and `llms.txt` use environment-neutral wording.

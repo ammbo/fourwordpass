@@ -21,10 +21,18 @@ type PayPalNamespace = {
 };
 
 let sdk: Promise<PayPalNamespace> | null = null;
-function loadSdk(clientId: string): Promise<PayPalNamespace> {
+let sdkKey: string | null = null;
+function loadSdk(clientId: string, sandbox: boolean): Promise<PayPalNamespace> {
+  const key = `${clientId}:${sandbox}`;
+  if (sdkKey !== key) {
+    document.querySelector("script[data-paypal-sdk]")?.remove();
+    sdk = null;
+    sdkKey = key;
+  }
   sdk ??= new Promise((resolve, reject) => {
     const s = document.createElement("script");
-    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=USD&intent=capture&components=buttons&disable-funding=paylater,venmo,credit`;
+    s.dataset.paypalSdk = key;
+    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=USD&intent=capture&components=buttons${sandbox ? "&disable-funding=paylater,venmo,credit" : ""}`;
     s.onload = () => resolve((window as unknown as { paypal: PayPalNamespace }).paypal);
     s.onerror = () => {
       sdk = null;
@@ -68,7 +76,7 @@ export function Checkout({ recoveryKey, config, purpose, validate, onPaid, onErr
     if (!real || !config.paypalClientId || !el.current) return;
     let buttons: PayPalButtons | null = null;
     let cancelled = false;
-    loadSdk(config.paypalClientId)
+    loadSdk(config.paypalClientId, sandbox)
       .then((paypal) => {
         if (cancelled || !el.current) return;
         buttons = paypal.Buttons({

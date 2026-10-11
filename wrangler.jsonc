@@ -38,12 +38,14 @@
   "vars": {
     "APP_URL": "https://fourwordpass.com",
     "MAIL_FROM": "buck@fourwordpass.com",
-    // "live" uses real PayPal (needs live credentials and webhook id); "sandbox" uses the PayPal sandbox API;
+    // One toggle for API, credential set, and sandbox UI/copy. Live creation remains paused.
+    // "live" selects PAYPAL_LIVE_*; "sandbox" selects PAYPAL_SANDBOX_* (or legacy PAYPAL_*);
     // "mock" simulates payouts locally (no credentials needed).
     "PAYPAL_MODE": "sandbox",
     // "send" uses the EMAIL binding; "log" stores emails in D1 and prints them (dev).
     "EMAIL_MODE": "send"
   }
   // Secrets (wrangler secret put): PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_WEBHOOK_ID,
+  // Prefer PAYPAL_SANDBOX_CLIENT_ID/CLIENT_SECRET/WEBHOOK_ID and PAYPAL_LIVE_CLIENT_ID/CLIENT_SECRET/WEBHOOK_ID.
   // TOKEN_SECRET, ADMIN_TOKEN, and optionally ANTHROPIC_API_KEY.
 }

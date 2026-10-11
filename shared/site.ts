@@ -1,6 +1,6 @@
 import type { PayPalMode } from "./types.ts";
 import { paymentNotice } from "./payments.ts";
-import { INFO_PAGES } from "./info.ts";
+import { INFO_PAGES, infoPagesForMode } from "./info.ts";
 
 /** Public brand and metadata. Never pass capability tokens or private bill fields here. */
 export const SITE_URL = "https://fourwordpass.com";
@@ -75,7 +75,9 @@ export const PRIVATE_PAGES: Record<string, PageMeta> = {
   "/me": { path: "/me", title: "Your bucks · Four Word Pass", description: "Every buck you've held, every word you've written, and the stories you started.", heading: "Your bucks", noindex: true },
 };
 
-export function pageMeta(path: string): PageMeta {
+export function pageMeta(path: string, mode: PayPalMode | null = "sandbox"): PageMeta {
+  const info = infoPagesForMode(mode)[path];
+  if (info) return {path, title: info.title, heading: info.heading, description: info.description};
   if (PAGES[path]) return PAGES[path];
   if (PRIVATE_PAGES[path]) return PRIVATE_PAGES[path];
   if (/^\/f\/[^/]+$/.test(path)) return {

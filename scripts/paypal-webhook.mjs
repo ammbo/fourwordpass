@@ -1,17 +1,16 @@
 #!/usr/bin/env node
-// Registers the Payouts webhook with PayPal sandbox and prints its id.
-//
-//   PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... node scripts/paypal-webhook.mjs [https://fourwordpass.com]
-//
-// Then: npx wrangler secret put PAYPAL_WEBHOOK_ID   (paste the printed id)
-
-const base = "https://api-m.sandbox.paypal.com";
+// Registers the Payouts webhook for PAYPAL_MODE=sandbox or live.
+// Supply scoped credentials through the environment. Store the printed webhook id
+// in the matching PAYPAL_SANDBOX_WEBHOOK_ID or PAYPAL_LIVE_WEBHOOK_ID secret.
+const mode = process.env.PAYPAL_MODE ?? "sandbox";
+if (mode !== "sandbox" && mode !== "live") throw new Error("PAYPAL_MODE must be sandbox or live for webhook registration.");
+const base = mode === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
 const site = (process.argv[2] ?? "https://fourwordpass.com").replace(/\/$/, "");
-const { PAYPAL_CLIENT_ID: id, PAYPAL_CLIENT_SECRET: secret } = process.env;
-if (!id || !secret) {
-  console.error("Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (sandbox app credentials).");
-  process.exit(1);
-}
+const prefix = `PAYPAL_${mode.toUpperCase()}`;
+const scoped = mode === "live" || Boolean(process.env.PAYPAL_SANDBOX_CLIENT_ID || process.env.PAYPAL_SANDBOX_CLIENT_SECRET || process.env.PAYPAL_SANDBOX_WEBHOOK_ID);
+const id = process.env[`${prefix}_CLIENT_ID`] || (!scoped ? process.env.PAYPAL_CLIENT_ID : undefined);
+const secret = process.env[`${prefix}_CLIENT_SECRET`] || (!scoped ? process.env.PAYPAL_CLIENT_SECRET : undefined);
+if (!id || !secret) throw new Error(`Set ${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET.`);
 
 const auth = await fetch(`${base}/v1/oauth2/token`, {
   method: "POST",
@@ -31,7 +30,7 @@ const list = await (await fetch(`${base}/v1/notifications/webhooks`, { headers }
 const existing = list.webhooks?.find((w) => w.url === url);
 if (existing) {
   console.log(`Webhook already registered for ${url}`);
-  console.log(`PAYPAL_WEBHOOK_ID=${existing.id}`);
+  console.log(`${prefix}_WEBHOOK_ID=${existing.id}`);
   process.exit(0);
 }
 
@@ -39,4 +38,4 @@ const res = await fetch(`${base}/v1/notifications/webhooks`, { method: "POST", h
 const body = await res.json();
 if (!res.ok) throw new Error(`Webhook registration failed: ${JSON.stringify(body)}`);
 console.log(`Registered ${url}`);
-console.log(`PAYPAL_WEBHOOK_ID=${body.id}`);
+console.log(`${prefix}_WEBHOOK_ID=${body.id}`);

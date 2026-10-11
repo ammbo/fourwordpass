@@ -1,7 +1,7 @@
 {
   "name": "Four Word Pass",
   "short_name": "Four Word Pass",
-  "description": "A story by strangers, four words at a time. PayPal sandbox beta.",
+  "description": "A story by strangers, four words at a time.",
   "start_url": "/",
   "scope": "/",
   "display": "browser",

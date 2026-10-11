@@ -38,7 +38,7 @@ describe('payment environment boundaries',()=>{
   });
   it('prevents new live charges and payouts while the funding model is unfinished',async()=>{
     const fetch=vi.fn();vi.stubGlobal('fetch',fetch);
-    const env={PAYPAL_MODE:'live',PAYPAL_CLIENT_ID:'live-client',PAYPAL_CLIENT_SECRET:'live-secret'} as Env;
+    const env={PAYPAL_MODE:'live',PAYPAL_LIVE_CLIENT_ID:'live-client',PAYPAL_LIVE_CLIENT_SECRET:'live-secret'} as Env;
     await expect(createOrder(env,'mint')).rejects.toThrow('paused');
     await expect(captureOrder(env,'order')).rejects.toThrow('paused');
     await expect(createPayout(env,{passId:'p',email:'reader@example.com',note:'',subject:'',message:'',since:0})).rejects.toThrow('paused');

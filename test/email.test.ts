@@ -60,3 +60,15 @@ it("durably retries provider failure and deduplicates successful mail", async ()
   expect(send).toHaveBeenCalledTimes(2);
   expect(send.mock.calls[1][0].text).toContain("Simulated payments");
 });
+
+it("uses live footer copy without relabeling queued sandbox mail", async () => {
+  const send = vi.fn(async (_m: { html: string; text: string }) => ({messageId: "m"}));
+  const env = {PAYPAL_MODE: "live", EMAIL_MODE: "send", MAIL_FROM: "buck@fourwordpass.com", EMAIL: {send}, DB: new DB()} as unknown as Env;
+  const mail = {to: "reader@example.com", kind: "notice", subject: "Your story", heading: "Hello", paragraphs: ["A story moved."]};
+  await sendMail(env, {...mail, deliveryKey: "live"});
+  expect(send.mock.calls[0][0].text).not.toContain("Sandbox");
+  expect(send.mock.calls[0][0].html).not.toContain("Sandbox");
+  expect(send.mock.calls[0][0].text).toContain("Beta guide");
+  await sendMail(env, {...mail, deliveryKey: "original-test", paymentMode: "sandbox"});
+  expect(send.mock.calls[1][0].text).toContain("Sandbox beta: test money");
+});

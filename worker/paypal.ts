@@ -28,25 +28,47 @@ export type PayoutState = {
 export const DELIVERED = new Set(["SUCCESS", "UNCLAIMED"]);
 export const FAILED = new Set(["FAILED", "BLOCKED", "DENIED", "RETURNED", "REFUNDED", "REVERSED", "CANCELED"]);
 
+/** Scoped credentials never cross environments. Legacy names are sandbox-only. */
+export function paypalCredentials(env: Env) {
+  if (env.PAYPAL_MODE === "live") return {
+    clientId: env.PAYPAL_LIVE_CLIENT_ID,
+    clientSecret: env.PAYPAL_LIVE_CLIENT_SECRET,
+    webhookId: env.PAYPAL_LIVE_WEBHOOK_ID,
+  };
+  // A partially configured scoped set must not mix with the legacy app.
+  const scoped = Boolean(env.PAYPAL_SANDBOX_CLIENT_ID || env.PAYPAL_SANDBOX_CLIENT_SECRET || env.PAYPAL_SANDBOX_WEBHOOK_ID);
+  return scoped ? {
+    clientId: env.PAYPAL_SANDBOX_CLIENT_ID,
+    clientSecret: env.PAYPAL_SANDBOX_CLIENT_SECRET,
+    webhookId: env.PAYPAL_SANDBOX_WEBHOOK_ID,
+  } : {
+    clientId: env.PAYPAL_CLIENT_ID,
+    clientSecret: env.PAYPAL_CLIENT_SECRET,
+    webhookId: env.PAYPAL_WEBHOOK_ID,
+  };
+}
+
 export function paypalMode(env: Env): PayPalMode {
   if (env.PAYPAL_MODE === "mock") return "mock";
   if (env.PAYPAL_MODE !== "live" && env.PAYPAL_MODE !== "sandbox") throw new Error("PAYPAL_MODE must be mock, sandbox, or live.");
-  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_CLIENT_SECRET) throw new Error("PayPal credentials are missing. Checkout is unavailable.");
+  const { clientId, clientSecret } = paypalCredentials(env);
+  if (!clientId || !clientSecret) throw new Error("PayPal credentials are missing. Checkout is unavailable.");
   return env.PAYPAL_MODE;
 }
 
 const apiBase = (env: Env) => API_BASE[paypalMode(env) === "live" ? "live" : "sandbox"];
 
-let cachedToken: { value: string; expires: number; clientId: string; base: string } | null = null;
+let cachedToken: { value: string; expires: number; clientId: string | undefined; secret: string | undefined; base: string } | null = null;
 
 async function accessToken(env: Env): Promise<string> {
-  if (cachedToken && cachedToken.clientId === env.PAYPAL_CLIENT_ID && cachedToken.base === apiBase(env) && cachedToken.expires > Date.now()) {
+  const { clientId, clientSecret } = paypalCredentials(env);
+  if (cachedToken && cachedToken.clientId === clientId && cachedToken.secret === clientSecret && cachedToken.base === apiBase(env) && cachedToken.expires > Date.now()) {
     return cachedToken.value;
   }
   const res = await fetch(`${apiBase(env)}/v1/oauth2/token`, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_CLIENT_SECRET}`)}`,
+      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: "grant_type=client_credentials",
@@ -54,7 +76,7 @@ async function accessToken(env: Env): Promise<string> {
   });
   if (!res.ok) throw new Error(`PayPal auth failed (${res.status})`);
   const data = (await res.json()) as { access_token: string; expires_in: number };
-  cachedToken = { value: data.access_token, expires: Date.now() + (data.expires_in - 120) * 1000, clientId: env.PAYPAL_CLIENT_ID, base: apiBase(env) };
+  cachedToken = { value: data.access_token, expires: Date.now() + (data.expires_in - 120) * 1000, clientId, secret: clientSecret, base: apiBase(env) };
   return data.access_token;
 }
 
@@ -232,12 +254,14 @@ export async function captureOrder(env: Env, orderId: string): Promise<string> {
  * byte-for-byte: re-serialising the parsed JSON can change it and break the check.
  */
 export async function verifyWebhook(env: Env, headers: Headers, rawBody: string): Promise<boolean> {
-  if (!env.PAYPAL_WEBHOOK_ID || paypalMode(env) === "mock") return false;
+  if (paypalMode(env) === "mock") return false;
+  const { webhookId } = paypalCredentials(env);
+  if (!webhookId) return false;
   const h = (k: string) => JSON.stringify(headers.get(k) ?? "");
   const body =
     `{"auth_algo":${h("paypal-auth-algo")},"cert_url":${h("paypal-cert-url")},` +
     `"transmission_id":${h("paypal-transmission-id")},"transmission_sig":${h("paypal-transmission-sig")},` +
-    `"transmission_time":${h("paypal-transmission-time")},"webhook_id":${JSON.stringify(env.PAYPAL_WEBHOOK_ID)},` +
+    `"transmission_time":${h("paypal-transmission-time")},"webhook_id":${JSON.stringify(webhookId)},` +
     `"webhook_event":${rawBody}}`;
   try {
     const res = await api<{ verification_status: string }>(env, "/v1/notifications/verify-webhook-signature", {

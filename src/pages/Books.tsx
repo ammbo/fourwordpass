@@ -218,7 +218,7 @@ export function Books() {
       tooltip: (p) => (p.value === "webhook" ? "PayPal told us first, in a signed webhook we verified." : p.value === "polling" ? "We asked PayPal before its webhook arrived." : null) },
     { field: "webhook", headerName: "Signed webhook", minWidth: 140, flex: 0.9, valueFormatter: (p) => (p.data?.direction === "in" ? "—" : p.value ? "✓ Verified" : "Not yet"),
       headerTooltip: "Whether PayPal's webhook for this payout arrived and passed signature verification." },
-    { field: "mode", headerName: "Mode", minWidth: 100, flex: 0.6, hide: !books?.rows.some((r) => r.mode === "mock") },
+    { field: "mode", headerName: "Mode", minWidth: 100, flex: 0.6, hide: false },
   ], [books?.rows]);
 
   const kpis = useMemo(() => {
@@ -354,9 +354,9 @@ export function Books() {
       {/* ---------------------------------------------------------------- how to read */}
       <section className="mt-12 grid gap-4 md:grid-cols-3">
         {[
-          ["UNCLAIMED means delivered", "PayPal holds the dollar for someone who doesn't have a PayPal account yet. In the sandbox that's almost everyone, so it counts as landed."],
+          ["UNCLAIMED means delivered", "PayPal accepted the payout, but the recipient has not claimed it. The story treats this as an accepted handoff; it is not proof of cash received."],
           ["Webhook or polling", "We ask PayPal right after every payout, then keep checking with increasing delays. Unclaimed payouts are checked periodically until their final outcome. PayPal also sends a signed webhook, which we verify before trusting. Whichever answers first settles the hop."],
-          ["Who pays for hops", `${mode === "mock" ? "Demo checkouts and payouts are simulated." : "Each sandbox release brings in $2 in test money; the platform funds later test payouts."} An operator can comp a release; it shows here as $0 in. Live payments are paused while a model with internal handoffs and a single final payout is being defined.`],
+          ["Who pays for hops", `${mode === "mock" ? "Demo checkouts and payouts are simulated." : mode === "sandbox" ? "Each sandbox release brings in $2 in test money; the platform funds later test payouts." : "New payments are paused."} An operator can comp a release; it shows here as $0 in. Live payments are paused while a model with internal handoffs and a single final payout is being defined.`],
         ].map(([t, d]) => (
           <div key={t} className="rounded-2xl border border-dashed border-line p-5">
             <div className="font-display text-lg font-semibold">{t}</div>

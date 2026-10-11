@@ -3,7 +3,7 @@ import { readHopPage, parseStoryCursor } from "./history";
 import type { PayPalMode } from "../shared/types";
 import { faqForMode, PAGES, PRIVATE_PAGES, SITE_NAME, SITE_URL, billMeta, escapeHtml, pageMeta, renderHead, type PageMeta } from "../shared/site";
 import { getBillBySerial, personalityOf } from "./db";
-import { INFO_LINKS, INFO_PAGES, infoHtml } from "../shared/info";
+import { infoLinksForMode, infoPagesForMode, infoHtml } from "../shared/info";
 
 type LinkBill = { serial: string; personality: string; is_seed: number };
 
@@ -12,7 +12,7 @@ function publicHtml(meta: PageMeta, content: string, mode: PayPalMode) {
   return `<div style="max-width:68rem;margin:auto;padding:2rem 1rem;font-family:Georgia,serif;color:#17402f">
     <header><a href="/">${SITE_NAME}</a><nav aria-label="Main navigation" style="margin:1rem 0"><a href="/wild">The wild</a> · <a href="/release">Release a buck</a></nav></header>
     <main><h1>${escapeHtml(meta.heading)}</h1>${content}<p>${escapeHtml(paymentNotice(mode))}</p></main>
-    <footer><a href="/">Home</a> · <a href="/wild">Find a story</a> · ${INFO_LINKS.map(({ path, label }) => `<a href="${path}">${label}</a>`).join(" · ")}</footer></div>`;
+    <footer><a href="/">Home</a> · <a href="/wild">Find a story</a> · ${infoLinksForMode(mode).map(({ path, label }) => `<a href="${path}">${label}</a>`).join(" · ")}</footer></div>`;
 }
 
 function billLinks(bills: LinkBill[]) {
@@ -26,7 +26,9 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
   if (path !== trimmed && (PAGES[trimmed] || /^\/b\/[^/]+$/.test(trimmed))) return new Response(null, {
     status: 301, headers: { Location: `${trimmed}${url.search}`, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
   });
-  let meta = pageMeta(path);
+  const mode = env.PAYPAL_MODE as PayPalMode;
+  const infoPages = infoPagesForMode(mode);
+  let meta = pageMeta(path, mode);
   let status = PAGES[path] || PRIVATE_PAGES[path] || /^\/f\/[^/]+$/.test(path) ? 200 : 404;
   let content = `<p>${escapeHtml(meta.description)}</p><a href="/wild">Browse the wild</a>`;
   const match = path.match(/^\/b\/([^/]+)$/);
@@ -70,8 +72,8 @@ export async function servePage(request: Request, env: Env): Promise<Response> {
       : `<p>Read a story, claim a buck, and write what happens next. Holders play free.</p>${bills.length ? billLinks(bills) : `<p>The wild is quiet. <a href="/release">Release a buck</a> to start a story.</p>`}`;
   } else if (path === "/release") {
     content = `<p>Four words to start it. Strangers write the story. You write the finale.</p><p>Release a buck for $2: $1 travels with the story and $1 supports the platform. Give it a prompt and send it to a friend or the wild.</p><p>Enable JavaScript to use the word counter and checkout.</p>`;
-  } else if (INFO_PAGES[path]) {
-    content = infoHtml(INFO_PAGES[path]);
+  } else if (infoPages[path]) {
+    content = infoHtml(infoPages[path]);
   }
   if (url.searchParams.has("t") || url.searchParams.has("c")) meta = { ...meta, noindex: true };
 

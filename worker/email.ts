@@ -3,7 +3,7 @@
 // EMAIL_MODE=log stores the full email in D1 instead of sending (local dev).
 
 import { newId, now } from "./util";
-import { INFO_LINKS, SUPPORT_EMAIL } from "../shared/info";
+import { infoLinksForMode, SUPPORT_EMAIL } from "../shared/info";
 import { SHARE_IMAGE, SITE_NAME, SITE_URL } from "../shared/site";
 
 export type Mail = {
@@ -70,7 +70,7 @@ ${m.serial ? `<div style="font:700 13px/1 'Courier New',monospace;letter-spacing
 ${image}${p}${code}${quote}${button}${secondary}
 ${m.footer ? `<p style="margin:20px 0 0;font:13px/1.5 Helvetica,Arial,sans-serif;color:#5d6f63">${esc(m.footer)}</p>` : ""}
 </div></td></tr></table>
-<div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}<br>${esc(notice)}<br>${INFO_LINKS.map(({ path, label }) => `<a href="${SITE_URL}${path}" style="color:#7a857d">${label}</a>`).join(" · ")}</div>
+<div style="max-width:560px;margin:14px auto 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#7a857d">Four Word Pass · a dollar, a story, four words at a time${unsub}<br>${esc(notice)}<br>${infoLinksForMode(m.paymentMode).map(({ path, label }) => `<a href="${SITE_URL}${path}" style="color:#7a857d">${label}</a>`).join(" · ")}</div>
 </td></tr></table></body></html>`;
 }
 
@@ -87,7 +87,7 @@ function renderText(m: Mail, notice: string): string {
     m.unsubscribeUrl ? `\nChange or stop these emails: ${m.unsubscribeUrl}` : "",
     "\n— Four Word Pass",
     notice,
-    ...INFO_LINKS.map(({ path, label }) => `${label}: ${SITE_URL}${path}`),
+    ...infoLinksForMode(m.paymentMode).map(({ path, label }) => `${label}: ${SITE_URL}${path}`),
   ].join("\n");
 }
 
@@ -103,7 +103,8 @@ function unsubscribeHeaders(settingsUrl: string): Record<string, string> {
 async function deliverMail(env: Env, m: Mail): Promise<boolean> {
   const id = newId();
   const mode = m.paymentMode ?? env.PAYPAL_MODE;
-  const notice = mode === "live" ? "Live payments. Real app emails." : mode === "mock" ? "Simulated payments. Real app emails." : "Sandbox beta: test money, real app emails.";
+  const notice = mode === "live" ? "New live payments are paused. Real app emails." : mode === "mock" ? "Simulated payments. Real app emails." : "Sandbox beta: test money, real app emails.";
+  m = {...m, paymentMode: mode as Mail["paymentMode"]};
   const text = renderText(m, notice);
   const log = (status: string, extra: { messageId?: string; error?: string; body?: string } = {}) =>
     env.DB.prepare(

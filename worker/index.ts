@@ -14,7 +14,7 @@ import { type PassRow, getBillBySerial, getPass, storyTail } from "./db";
 import * as engine from "./engine";
 import { UserError } from "./engine";
 import { ctxOf, ip, limit, readBody } from "./http";
-import { createOrder, PayPalError, paypalMode, parsePayoutEvent, verifyWebhook } from "./paypal";
+import { createOrder, PayPalError, paypalMode, paypalCredentials, parsePayoutEvent, verifyWebhook } from "./paypal";
 import { checkCap, newId, now, placeFromRequest, placeLabel, randomToken, recoveryHash } from "./util";
 import { SUGGESTIONS_PER_HOLDER, creatorView, holderView, passFromTicket, publicBill, summaries } from "./views";
 import { servePage, serveSitemap } from "./seo";
@@ -69,7 +69,7 @@ app.get("/api/config", (c) => {
   const place = placeFromRequest(c.req.raw);
   return c.json<AppConfig & { place: string | null }>({
     paypalMode: mode,
-    paypalClientId: mode === "mock" ? null : c.env.PAYPAL_CLIENT_ID,
+    paypalClientId: mode === "mock" ? null : paypalCredentials(c.env).clientId!,
     place: place.city || place.country ? placeLabel(place) : null,
   });
 });

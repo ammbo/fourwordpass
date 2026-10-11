@@ -17,7 +17,7 @@ export function PageMetadata() {
   const mode = usePaymentMode();
   useEffect(() => {
     // Preserve the server's story metadata while its live data loads.
-    if (!/^\/b\/[^/]+$/.test(path)) updateMetadata(pageMeta(path), mode);
+    if (!/^\/b\/[^/]+$/.test(path)) updateMetadata(pageMeta(path, mode), mode);
   }, [path, mode]);
   return null;
 }

@@ -9,7 +9,7 @@ import { PageMetadata } from "./components/PageMetadata";
 import { Info } from "./pages/Info";
 import { PaymentProvider, usePaymentMode } from "./paymentMode";
 import { paymentNotice } from "../shared/payments";
-import { INFO_LINKS } from "../shared/info";
+import { INFO_LINKS, infoLinksForMode } from "../shared/info";
 
 // The grid and chart libraries only load for Open Books.
 const Books = lazy(() => import("./pages/Books").then((m) => ({ default: m.Books })));
@@ -111,7 +111,7 @@ function AppContents() {
           </div>
           <nav aria-label="Information" className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
             <Link href="/books" className="font-semibold text-ink underline-offset-4 hover:underline">Open books</Link>
-            {INFO_LINKS.map(({ path, label }) => <Link key={path} href={path} className="underline-offset-4 hover:text-ink hover:underline">{label}</Link>)}
+            {infoLinksForMode(mode).map(({ path, label }) => <Link key={path} href={path} className="underline-offset-4 hover:text-ink hover:underline">{label}</Link>)}
           </nav>
         </div>
       </footer>

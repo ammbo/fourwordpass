@@ -340,6 +340,7 @@ Design the data model for these now; only the mint flow needs a (sandbox-simulat
 | Mint fee | Minting costs $2: $1 funds the bill, $1 platform revenue |
 | Fork fee | Forking costs $2: $1 funds the new bill, $1 platform revenue |
 | Storybook export | A finished/eulogized story becomes an AI-illustrated print-on-demand book (~$20). Buyers: contributors who want the book of the story they helped write |
+| Story readings and videos | A finished story performed in a chosen voice or style: audio, short generated video, or longer rendered video. One-off purchase, or a group gift for every contributor (Section 18) |
 | Sponsored bills | A brand funds N bills ($1 each) + a fee; bill pages carry "Released by {brand}". Distribution they cannot buy elsewhere |
 | Private chains | Paid private bills for weddings, conferences, classrooms: invite-only holders, custom prompt, printable keepsake |
 
@@ -446,27 +447,115 @@ Layered, in order of importance:
 
 ## 18. MVP scope vs V2
 
+Status as of Oct 9, 2026. The hackathon build is deployed at fourwordpass.com and passes a full hosted sandbox run. Known hurdle: the initial $2 purchase has to go through PayPal sandbox checkout. Submission logistics (video, Devpost, seeding the wild for judging) are tracked in `devpost-submission.md`, not here.
+
+**Where the build differs from this document:**
+
+- Product is **Four Word Pass** (fourwordpass.com), serials `FWP-0001`. "Pass the Buck" survives as a phrase, not the product name.
+- Email is **Cloudflare Email Service**, not Resend. Inbound mail for `@fourwordpass.com` goes to a catch-all Worker and is stored in D1; nothing forwards to a human inbox.
+- Sign-in is an emailed **six-digit code or link**, not a magic link only.
+- Mint and fork use a **real sandbox Orders checkout**, not a stub. Mock mode exists only for local testing.
+- AI prompts live in `worker/ai.ts`, not a `prompts/` directory. Each AI output still stores its model and prompt.
+
 ### MVP (hackathon build)
 
-- Mint, contribute, wild claim, pass — full loop on PayPal sandbox with webhook confirmation
-- 4-content-word validation with stopword exemption
-- Bill page: story (with contributor hover-highlight), map, diary, passport (AI stamps async)
-- AI: personality, diary, nags, next-4-words suggestions, creator finale with AI suggestions, eulogy + labeled AI closing
-- Forking (full mechanic — it is core to the pitch, not a nice-to-have)
-- Optional magic-link accounts (Resend), handles, claiming past hops
-- Follower preferences: every hop vs only when it ends
-- Courier score (simple v1 formula) + leaderboard
-- Admin flag for featured mega-bills; no hop limits anywhere
-- Timed demo support: seed script that creates bills and simulates hops for the video
+- [x] Mint, contribute, wild claim, pass: full loop on PayPal sandbox, confirmed by webhook with polling as fallback
+- [x] $2 mint and fork through sandbox Orders checkout
+- [x] 4-content-word validation with stopword exemption
+- [x] Bill page: story with contributor highlight linked to map pins and passport stamps, diary, async AI stamps, paged history for long stories, live updates
+- [x] AI: personality, diary, nags, next-4-words suggestions (rationed per holder), creator finale with AI suggestions, eulogy and labeled AI closing
+- [x] Forking, with the family tree on both bills' pages
+- [x] Optional accounts: emailed code sign-in, claimed pen names, past hops linked automatically by participant id, dashboard with stamps and follows
+- [x] Follower preferences (every hop / only when it ends), with a manage link in every email
+- [x] Admin: featured bills, remove a hop, end a bill, seed and decorate demo bills (admin endpoints rather than a standalone script); no hop limits anywhere
+- [ ] Courier score and leaderboard (punted to V2)
+
+**Shipped beyond the original MVP:**
+
+- [x] Send back: a holder who doesn't want the buck returns it to whoever passed it (or to the wild, if they claimed it); the sender passes it again
+- [x] Open Books: a public ledger of every dollar in and out
+- [x] SEO: server-rendered metadata, sitemaps, policy and FAQ pages
+- [x] Share: native share sheet on mobile, custom share dialog on desktop (copy link, X, Bluesky, Facebook, LinkedIn, Reddit, email)
+- [x] Email deliverability: SPF/DKIM/DMARC on Cloudflare, text-first layout led by the heading, RFC 8058 one-click unsubscribe on every non-transactional email (buck-passing emails are transactional and carry none)
+- [x] Flood limits per inbox: 5 passes or claims per address per day, 3 follow confirmations per address per day, holder-link resend once an hour, hop emails to a follower at most every 3 hours, sign-in codes capped at 6 an hour and 12 a day
+
+**Punted from the original MVP:**
+
+- [ ] Courier score and leaderboard (Sections 11.3, 13.2)
+- [ ] Photo notes on hops (text notes only)
+- [ ] Next-holder matchmaking (Section 9.7)
+- [ ] Report button on bill pages (reports go to the support email; an admin can remove a hop)
+- [ ] Storybook page stub (Section 13.2)
+- [ ] Chapter breaks for very long stories (paging exists; generated chapter summaries do not)
+
+**Operations, not code:**
+
+- [ ] Google Search Console verification TXT record (add in the Cloudflare dashboard)
+- [ ] DMARC reporting address: `v=DMARC1; p=reject; rua=mailto:dmarc@fourwordpass.com`
+- [ ] Register the domain in Google Postmaster Tools
+- [ ] Forward support mail to a real inbox (verify a destination address, then forward from the email Worker)
 
 ### V2 (post-hackathon)
 
-- Production money: the "Paid Four Word" model below, real $2 mint/fork/revival checkout, Payouts approval
-- Pass by link: the holder shares a private hand-off link (text, chat, QR) instead of typing an email; the first person to open it claims the buck with their own email. Expires back to the sender or the wild.
-- Storybook print-on-demand export and storefront
-- Sponsored bills + brand dashboard; private chains (weddings, conferences)
-- Push notifications; richer courier score; chapter summaries for 1,000+ hop stories
-- Multi-currency; non-US payout handling
+Decision (Oct 9): the hackathon entry keeps per-hop sandbox payouts. Everything below waits until after submission.
+
+- [ ] Production money: the "Paid Four Word" model below, real $2 mint/fork/revival checkout, Payouts approval
+- [ ] Pass by link (details below)
+- [ ] An address-wide "never email me" opt-out (today, unsubscribing is per buck)
+- [ ] Abuse detection for cash-out gaming (see below)
+- [ ] Courier score and leaderboard; richer courier score later
+- [ ] Story readings and videos: a paid add-on for finished stories (details below)
+- [ ] Storybook print-on-demand export and storefront
+- [ ] Sponsored bills + brand dashboard; private chains (weddings, conferences)
+- [ ] Push notifications; chapter summaries for 1,000+ hop stories
+- [ ] Multi-currency; non-US payout handling
+
+#### Pass by link
+
+- The holder chooses "Pass by link" instead of typing an email. The share sheet (or desktop share dialog) sends a private hand-off link by text, chat, or QR.
+- The bill is reserved for that link for about 48 hours. One claim per link. The first person to open it reads the story and enters their own PayPal email; that consent helps deliverability and means the holder never needs anyone's address.
+- The sender sees the claimer's masked email. A Turnstile check guards the claim step. An optional first name from the sender acts as a soft check.
+- Unclaimed links expire back to the sender (who picks again) or to the wild, reusing the send-back flow.
+- Link previews carry the bill's card and a story line, so group chats become the growth loop.
+
+#### Story readings and videos
+
+A one-off purchase once a story ends (finale or eulogy): the story performed in a chosen voice, tone, or style. Every contributor is a likely buyer, and every free preview is an ad.
+
+**Rules**
+
+- The performance is verbatim. AI reads or acts the story; it never rewrites, smooths, or summarizes it. Label it as an AI performance.
+- Voices and characters are archetypes ("noir detective", "nature documentary", "bedtime story", "old-time radio", "monk reading a leather-bound tome"). Never a real person's voice or likeness (right-of-publicity and voice laws such as Tennessee's ELVIS Act).
+- The terms must license contributors' words for paid readings and videos.
+
+**Formats**
+
+- **Audio:** text-to-speech in the chosen voice (ElevenLabs or similar). Any length. A full 40,000-word story runs 4 to 5 hours, so price by length.
+- **Generated video, under a minute:** a cheap video model with a reference image for a consistent look. Use the bill's own art (banknote, passport stamps, personality) as the reference. Short clips are stitched together: the opening, a few highlights, and the finale, all read verbatim.
+- **Rendered video, over a minute:** templated rather than generated. Narration over the story text, the map trail animating hop by hop, and passport stamps turning. Deterministic, on-brand, cheap at any length, and rendered once and cached.
+
+**Cost reference** (fal.ai MiniMax H3 Max Turbo, per second of video; promotional rates end Oct 15, 2026):
+
+| Resolution | Promo | Regular | 60-second clip at regular rate |
+|---|---|---|---|
+| 480p | $0.015 | $0.025 | $1.50 |
+| 768p | $0.024 | $0.04 | $2.40 |
+| 1080p | $0.048 | $0.08 | $4.80 |
+
+Prices are falling; re-check before launch and keep the model swappable.
+
+**Pricing to start with**
+
+| Product | Price |
+|---|---|
+| 30-second preview clip, branded with the bill's link | Free |
+| Full audio reading, one voice | $3–5 |
+| Generated video under a minute | $9–15 |
+| Rendered video over a minute | $9–15 |
+| Unlock for every contributor (a group gift; contributors can chip in) | A multiple of the single price |
+
+- Checkout through the PayPal Orders API. Generate after payment confirms, then cache and email a link.
+- Later: voice bundles ("pick three narrators"), and a bundle with the storybook print.
 
 #### Post-hackathon option: "Paid Four Word" (cash-out model)
 

@@ -4,9 +4,9 @@ Paste-ready answers for each field, in form order. Anything in `[brackets]` is y
 
 Deadline: **Nov 12, 2026, 12:00 pm PT / 3:00 pm ET**. Judging: **Dec 1–15, 2026**. Winners: around Dec 21.
 
-Checked against the official rules, overview, FAQ and AG Grid sponsor page on Oct 9, 2026, and against the code and the live site.
+Reviewed October 10, 2026 against the current checkout, hosted `/api/config` and `/api/books`, and the official rules, overview, and sponsor pages. The Devpost connector returned internal errors, so this is a review of the local packet; the saved online entry has not been inspected or changed.
 
-**Oct 9 reliability update:** the draft below reflects local repairs awaiting deployment and a hosted retest. Sandbox checkout remains a known testing hurdle. Keep the hosted judge instructions marked provisional until a fresh mint → handoff → contribution → finale run passes. Mock mode is a separate simulation and is not evidence of a PayPal transaction. Live checkout and new live payouts are gated in this build; the proposed held-dollar model is not implemented.
+**Oct 10 review:** the draft below includes reliability repairs and the environment-switch audit. Deployment of these changes and a fresh hosted retest remain unverified. Sandbox checkout remains a known testing hurdle. Keep the hosted judge instructions marked provisional until a fresh mint → handoff → contribution → finale run passes. Mock mode is a separate simulation and is not evidence of a PayPal transaction. Live checkout and new live payouts are gated in this build; the proposed held-dollar model is not implemented.
 
 ---
 
@@ -30,10 +30,10 @@ Checked against the official rules, overview, FAQ and AG Grid sponsor page on Oc
 
 ## Before you submit
 
-- [ ] **Make the repo public** and set its About: *A dollar carries a story, four words at a time. PayPal sandbox payments prove its handoffs.* · `https://fourwordpass.com`. MIT is already detected, so the license shows once it's public.
+- [ ] **Make the repo public** and set its About: *A dollar carries a story, four words at a time. PayPal sandbox payouts record its handoffs.* · `https://fourwordpass.com`. MIT is already detected, so the license shows once it's public.
 - [ ] **Keep this file out of the public repo.** It's tracked (it went in with commit 4de561c), so making the repo public publishes it and its history. Nothing in it is secret today.
-- [ ] **Run a real relay by Oct 16.** This one job feeds the video, Open Books and the story. Right now Open Books shows 3 payouts and $0 in, and its "who wrote the words" and "AI by model" charts are empty because seeded bills are left out. The long demo stories (Wendell, Valentine) were written by AI seeding, so the video and this page can't show them as written by people. Mint two or three hero bills through checkout, pass them through 10 to 12 friends in different cities, fork one, and write one finale. The plan is in [video-concepts.md](video-concepts.md).
-- [ ] **Stock the wild for judging, not just for the deadline.** A bill in the wild dies 14 days after it got there, and a claimer who never writes keeps it for 24 hours. Seeds made around Nov 10 die around Nov 24, a week before judging. Seed a batch on the morning of **Dec 1**, top it up around Dec 8, and keep 8 to 10 in the wild so a judge never finds it empty. FWP-0002 is the only bill there now; it was claimed and returned on Oct 9, so it dies around Oct 23.
+- [ ] **Run a real relay by Oct 16.** This one job feeds the video, Open Books and the story. The October 10 hosted snapshot shows one $2 sandbox checkout and eight $1 accepted test payouts, all `UNCLAIMED` with verified webhooks recorded. Non-seeded story records include five hops / 20 holder content words and AI writing/art records; these totals are not a count of independent participants. The long demo stories (Wendell, Valentine) were written by AI seeding, so the video and this page can't show them as written by people. Mint two or three hero bills through checkout, pass them through 10 to 12 friends in different cities, fork one, and write one finale. The plan is in [video-concepts.md](video-concepts.md).
+- [ ] **Stock the wild for judging, not just for the deadline.** A bill in the wild dies 14 days after it got there, and a claimer who never writes keeps it for 24 hours. Seeds made around Nov 10 die around Nov 24, a week before judging. Seed a batch on the morning of **Dec 1**, top it up around Dec 8, and keep 8 to 10 in the wild so a judge never finds it empty. Check the current Wild page before recording and again before judging; availability and expiry change as people participate.
 - [ ] **Join the hackathon on Devpost** if you haven't. The submit form only appears for registered participants.
 - [ ] **Upload the video as Public** on YouTube, under 3:00.
 - [ ] **Decide on AG Studio** (see "AG Grid sponsor prize" at the end).
@@ -75,11 +75,13 @@ Four Word Pass is a collaborative story carried by a dollar, with PayPal sandbox
 
 **It's born.** Someone checks out for $2 in sandbox test money to start a story: $1 rides with the bill and $1 keeps the lights on. They write the first four words, *the Foreword*. AI gives the bill a name, a voice and a few quirks. (One of ours is Wendell the Damp: *"Rained on in six countries. Still not dry."*) Then they name the first holder by email, or release the bill to *the wild*, where any stranger can claim it.
 
-**It's passed.** The holder gets an email and opens the link. There's no account, no app and no PayPal login. They add exactly four words that count. Little words like *the, a, to, of* ride free so grammar still works, but "and then the lights dimmed" gets *"That's 2 content words. The buck demands four."* Stuck? AI offers three continuations, and the holder picks one or ignores them. Then they pass the buck, and the platform sends the next holder $1 through PayPal Payouts. **Their words join the story when the handoff is accepted, or immediately when they release the bill to the wild.** Sandbox treats `SUCCESS` and `UNCLAIMED` as accepted handoffs; unclaimed test money is not proof of cash received. Joining is free, and a hop takes about a minute.
+**It's passed.** The holder gets an email and opens the link. No account or app download is required to contribute from the holder link. They add exactly four words that count. Little words like *the, a, to, of* ride free so grammar still works, but "and then the lights dimmed" gets *"That's 2 content words. The buck demands four."* Stuck? AI offers three continuations, and the holder picks one or ignores them. Then they pass the buck, and the platform sends the next holder $1 through PayPal Payouts. **Their words join the story when the handoff is accepted, or immediately when they release the bill to the wild.** Sandbox treats `SUCCESS` and `UNCLAIMED` as accepted handoffs; unclaimed test money is not proof of cash received. Joining is free; payment and email timing vary.
 
 **It remembers.** After every hop the bill writes a diary entry in its own voice about the new words and the city it just left. Its passport gets a stamp with the city, the date and an ink illustration painted for that place. A map, *The Passage*, traces it city to city.
 
 **It gets needy.** Sit on a bill and it nags you: needy at one day, dramatic at three, theatrical at seven. Not for you? One link sends it back to whoever passed it to you, and they pick someone else.
+
+**It keeps your place.** Private links work without an account. If you want a permanent shelf, an optional passwordless account gathers the bucks you have released, held, written in or followed, including earlier activity tied to your email. You can claim a pen name and manage follow preferences from one dashboard.
 
 **It branches.** Don't like where a story went? Fork it from any hop into a new bill. Bills keep a family tree, and anyone can request email updates, activated after confirming from their inbox. Long stories open on the newest 200 hops, with earlier/later pages and jumps to the beginning or latest page.
 
@@ -87,7 +89,7 @@ Four Word Pass is a collaborative story carried by a dollar, with PayPal sandbox
 
 ### Two rules hold it together
 
-**People write the story. AI plays the bill.** The AI names the bill, writes its diary, nags its holders, paints its stamps and offers suggestions a person has to accept. It never moves money, and it never writes a hop. The only AI text that can enter a story is a lost bill's closing, which is labeled and capped at about 5% of the story:
+**People write the story. AI plays the bill.** The AI names the bill, writes its diary, nags its holders, paints its stamps and offers suggestions a person has to accept. It never moves money or independently submits a hop; a person chooses every contribution, including whether to accept a suggestion. The only AI text added without a holder choosing it is a lost bill's closing, which is labeled and capped at about 5% of the story:
 
 $$ \text{closing words} = \min\big(12,\ \max(1,\ \lfloor 0.05 \cdot w \rfloor)\big) $$
 
@@ -97,12 +99,12 @@ where \\( w \\) is the number of content words in the story.
 
 ### Open Books
 
-The platform takes every checkout and sends every payout, so it can publish all of them. **[Open Books](https://fourwordpass.com/books)** is a live public ledger of every dollar in and out, built with **AG Grid** and **AG Charts**.
+The platform takes every checkout and sends every payout, so it can publish its recorded outcomes. **[Open Books](https://fourwordpass.com/books)** is a public ledger of recorded checkouts and payouts, built with **AG Grid** and **AG Charts**.
 
-- **The ledger:** every $2 checkout and $1 payout, with its bill, the hop whose words rode on it, PayPal's status, a masked PayPal reference, how long it took to land, and whether a signed webhook or polling confirmed it. Sort, filter, search, export to CSV. Status cells flash when PayPal answers.
-- **The charts:** money in vs. out by day, payouts by PayPal status, time to land, who wrote the words (people vs. a lost bill's labeled closing), and the bill's AI writing by model. Every chart is computed from the ledger's filtered rows, so filtering to one bill re-slices the whole page. Every bill page links to its own slice.
+- **The ledger:** $2 checkouts and $1 payouts, with its bill, the hop whose words rode on it, PayPal's status, a masked PayPal reference, how long it took to land, and a verified-webhook indicator and an inferred webhook/polling settlement path. Sort, filter, search, export to CSV. Status cells flash when PayPal answers.
+- **The charts:** money in vs. out by day, payouts by PayPal status, time to land, who wrote the words (people vs. a lost bill's labeled closing), and the bill's AI writing by model. The money, payout-status and time-to-land charts, plus the payment totals, follow the ledger's filtered rows. The word-authorship and AI-by-model charts remain sitewide, excluding seeded demo histories. Every bill page links to its own slice.
 
-Public views omit email addresses, and PayPal references are masked.
+Public views omit email addresses, and PayPal references are masked. The current feed is bounded to the latest 2,000 records per transaction query; CSV exports the loaded grid, not an unlimited historical archive.
 
 ## Who it's for, and why it matters
 
@@ -110,7 +112,7 @@ Payment apps treat money as plumbing. Four Word Pass treats a payment as somethi
 
 - **Friends and strangers who want a small, real reason to connect.** A story can be a gift to a friend in another city, a game for a group chat or a book club, or a message in a bottle for a stranger. An email link is the whole onboarding.
 - **PayPal.** The sandbox prototype demonstrates Orders, Payouts and verified webhooks through a story people can join. For a live version, we are exploring holding the dollar while people pass the story internally and paying it out once at the end; fees make a live payout at every hop impractical. The final recipient and the handling of stories that end in the wild remain product decisions.
-- **Anyone who pays people and has to prove it.** Mutual aid funds, fundraisers, creator funds and marketplaces all get asked "did the money actually go out?" Open Books is a working answer. When the platform is the sender of record, it can publish every payment with PayPal's own status, confirmed by signed webhooks, without exposing anyone.
+- **Anyone who pays people and has to prove it.** Mutual aid funds, fundraisers, creator funds and marketplaces all get asked "did the money actually go out?" Open Books is a working answer. When the platform is the sender of record, it can publish every payment with PayPal's own status, with verified-webhook indicators and polling fallback, while omitting participant email addresses and masking provider references.
 
 ## How we built it
 
@@ -120,7 +122,7 @@ One Cloudflare Worker serves the React app and the API.
 
 - **Orders API v2 + the PayPal JavaScript SDK** take the $2 when a story starts or forks. The server creates the order, PayPal's buttons collect approval, and the server captures it and checks the amount and currency before it creates anything. Money comes in first, so if the capture fails, no bill exists.
 - **Payouts API** sends a $1 sandbox test payout on named handoffs and wild claims. The platform is the sender, the pass id doubles as `sender_batch_id` to prevent duplicate payouts, and the payout note carries the serial and a link back to the bill. A release to the wild pays no recipient.
-- **Webhooks** (`PAYMENT.PAYOUTS-ITEM.*`) are checked with PayPal's verify-webhook-signature API. Three paths can settle a payout: a signed webhook, fast polling right after the payout, and a once-a-minute cron. Story settlement is idempotent; later financial status changes still update the ledger without undoing published words. Open Books shows which path confirmed each payout and whether a verified webhook arrived. In sandbox, a payout lands in seconds.
+- **Webhooks** (`PAYMENT.PAYOUTS-ITEM.*`) are checked with PayPal's verify-webhook-signature API. Three paths can settle a payout: a signed webhook, fast polling right after the payout, and a once-a-minute cron. Story settlement is idempotent; later financial status changes still update the ledger without undoing published words. Open Books shows which path confirmed each payout and whether a verified webhook arrived. The October 10 hosted ledger records accepted sandbox payouts in 16–19 seconds; this is an observed test result, not a timing guarantee.
 - **Retries that can't pay twice.** If PayPal has a hiccup (a 5xx, a rate limit, an auth blip) when we create a payout, the pass stays in flight and retries with the same `sender_batch_id`. A definitive rejection restores the sender or releases a new bill to the wild. After two hours an unresolved payout stays reserved and keeps reconciling; a local timeout cannot safely authorize a second payout. Paid mints can resume with a private checkout recovery key, and creator/holder mail is durably queued for retries.
 
 **AI (Cloudflare Workers AI)**
@@ -128,14 +130,16 @@ One Cloudflare Worker serves the React app and the API.
 - **Llama 3.3 70B** where someone is waiting: the bill's personality at mint, and four-word suggestions.
 - **gpt-oss-120b** for background writing: the diary, the nags, the eulogy and its labeled closing.
 - **FLUX.1 [schnell]** paints the ink illustration on each passport stamp.
-- Every prompt is versioned. Each output's shape is a Zod schema, sent to the model as JSON Schema, and every response is validated against it before it's stored. Every stored output records the model and prompt version that wrote it, and Open Books charts those records.
+- Text prompts are versioned and generated text is validated against Zod schemas before storage. Interactive Workers AI requests and configured Anthropic requests use JSON Schema output constraints; background Workers AI text is parsed and validated on return. Stored writing records include model and prompt provenance. Open Books counts diary records by model and ready stamp illustrations; it does not enumerate every model call or suggestion.
 - AI suggestions must pass the same four-word rule as human words, and each holder gets five.
 - The bill's writing runs after the money settles and has hand-written fallbacks, so a model outage never stalls a hop.
 
 **AG Grid and AG Charts**
 
+Open Books makes the payment mechanics visible: readers can isolate one bill, inspect a delayed or unclaimed payout, and export the evidence. AG Grid gives that investigation one consistent set of filters and status cells; AG Charts turns the same filtered payment rows into a readable picture of the journey.
+
 - **AG Grid Community** runs the Open Books ledger: client-side row model, custom cell renderers for bills and PayPal statuses, column and quick filters, pagination, CSV export, and cell-change flashing for live status updates. It's themed with the Theming API to match the site's paper-and-ink look.
-- **AG Charts Community** draws bar and donut charts from the grid's filtered rows. The palette comes from the brand's inks, adjusted until it passed a colorblind-safety check.
+- **AG Charts Community** draws bar and donut charts from the grid's filtered rows. The palette comes from the brand's inks.
 - Only the modules in use are registered, and the page loads lazily so the rest of the app doesn't pay for it.
 
 **Cloudflare and the frontend**
@@ -148,7 +152,7 @@ We built it with Claude Code as a pair programmer, working from a written PRD.
 
 ## Challenges we ran into
 
-- **`UNCLAIMED` means success.** A payout to someone without a PayPal account comes back `UNCLAIMED`, not `SUCCESS`, and in sandbox that's every real email address. Waiting for `SUCCESS` would have stalled every story at its first stranger. `UNCLAIMED` counts as delivered. A definitive failure before settlement restores the sender. Later `SUCCESS`, `RETURNED` or reversal updates the financial record without rewinding the story.
+- **`UNCLAIMED` means an accepted, unclaimed payout.** A payout to someone without a PayPal account comes back `UNCLAIMED`, not `SUCCESS`, which is common for ordinary email addresses in sandbox. Waiting for `SUCCESS` would have stalled every story at its first stranger. `UNCLAIMED` counts as delivered. A definitive failure before settlement restores the sender. Later `SUCCESS`, `RETURNED` or reversal updates the financial record without rewinding the story.
 - **Sandbox PayPal never emails real inboxes**, so the buzz in your pocket can't come from PayPal. The bill sends its own email with the link, and hops with an associated payout show a masked PayPal receipt (`PayPal sandbox payout ••••7QX2 · UNCLAIMED`) recording the accepted test payout.
 - **The wild had no payout.** Releasing a bill to the wild pays nobody, so under "words land when the payout lands" those words could never land. The rule became *your words land when the bill leaves your hands successfully*: either a delivered payout, or a release to the wild, where the platform holds the dollar until a stranger claims it.
 - **Webhook verification is byte-sensitive.** Re-serializing the parsed event can change it and break the signature check, so the raw body goes in verbatim.
@@ -162,10 +166,10 @@ We built it with Claude Code as a pair programmer, working from a written PRD.
 
 ## Accomplishments that we're proud of
 
-- A full sandbox run: claim, payout `UNCLAIMED` in 18 seconds, the holder's email, four words from the emailed link, a second payout, and signed webhooks verified and matched. It's all on [Open Books](https://fourwordpass.com/books).
+- A hosted ledger with a $2 sandbox checkout and eight accepted $1 test payouts, each with a verified webhook recorded in the October 10 snapshot. [Open Books](https://fourwordpass.com/books) exposes their statuses and masked references. A fresh relay still needs to verify the current checkout, email, contribution and finale experience after deployment.
 - Named handoffs wait for a PayPal outcome; releasing to the wild publishes the words without a payout. The rule is visible in the story and ledger.
-- The bill has a voice people want to screenshot, and it never writes the story.
-- It's a whole product, not a demo: it works on phones, has share cards, privacy and terms pages, and a support inbox.
+- The bill has a distinct voice while people stay in control of the story's contributions.
+- The prototype includes responsive pages, share cards, privacy and terms pages, a support inbox, and optional passwordless accounts that collect a reader's history in one place.
 - `forwordpass.com`, `forewordpass.com` and `forewardpass.com` all redirect home, because "four" is a homonym.
 
 ## What we learned
@@ -261,7 +265,7 @@ The Presentation criterion asks three things: what problem is solved, who it's f
 **Description for YouTube** (paste under the video):
 
 ```text
-A dollar that's never spent, only passed. Four Word Pass sends a $1 PayPal sandbox test payout to every person who holds a bill, and each holder adds four words to the story it carries. AI plays the bill: it names itself, keeps a diary, nags, paints passport stamps and writes its own eulogy. People write every word of the story. Every payment is on a public ledger.
+A dollar that's never spent, only passed. Four Word Pass sends $1 PayPal sandbox test payouts on named handoffs and wild claims, and each holder chooses four words to add to the story it carries. AI plays the bill: it names itself, keeps a diary, nags, paints passport stamps and writes its own eulogy. People choose the contributions; a lost bill can add a short labeled AI closing. Recorded checkouts and payouts appear on a public ledger.
 
 Built for the PayPal AI Hackathon with PayPal Orders v2, Payouts and Webhooks, Cloudflare Workers AI, and AG Grid + AG Charts.
 
@@ -324,7 +328,7 @@ N/A. New project, first commit Oct 8, 2026. Bills labeled "Demo history" on the 
 PayPal moves the money and AI plays the bill. Named handoffs and wild claims use PayPal sandbox test payouts; words become public after PayPal reports SUCCESS or UNCLAIMED, or immediately on release to the wild. Every recorded checkout and payout appears in Open Books. Mock local mode simulates these APIs and is labeled separately. The AI reacts to what the money does: a landed payout triggers the bill's diary entry and passport stamp, money that sits still triggers nags, and money that stops for 14 days triggers the eulogy.
 
 PAYPAL
-- Payouts API (/v1/payments/payouts): sends $1 to the next holder on every hop. The platform is the sender of record, so every hop is a payment we can verify. The pass id is the sender_batch_id, which makes retries idempotent: PayPal outages and rate limits are retried without risk of paying twice. The payout note carries the bill's serial and a link back to its story. Later returns and reversals update the ledger without moving the story backward.
+- Payouts API (/v1/payments/payouts): sends $1 in test money on named handoffs and wild claims; release to the wild has no recipient payout. The platform is the sender of record, so each recipient payout has a provider outcome we can record. The pass id is the sender_batch_id, which makes retries idempotent: PayPal outages and rate limits are retried without risk of paying twice. The payout note carries the bill's serial and a link back to its story. Later returns and reversals update the ledger without moving the story backward.
 - Webhooks (PAYMENT.PAYOUTS-ITEM.SUCCEEDED / UNCLAIMED / FAILED / BLOCKED / RETURNED and others), checked with the verify-webhook-signature API. For a named handoff, words join the story after PayPal reports acceptance; release to the wild is the exception and sends no payout. A signed webhook, fast polling right after the payout, or a once-a-minute cron can settle it; the first one wins.
 - Orders API v2 (create + capture): the $2 to start or fork a story. $1 funds the bill's first payout and $1 is the platform fee. The server checks the captured amount and currency before it creates anything.
 - PayPal JavaScript SDK (Smart Payment Buttons): the checkout UI for the $2, shown as PayPal's card button with a published sandbox test card.
@@ -335,9 +339,9 @@ AI (Cloudflare Workers AI)
 - Llama 3.3 70B (@cf/meta/llama-3.3-70b-instruct-fp8-fast): invents each bill's personality (name, voice, quirks) at mint, and suggests four-word continuations when a holder asks. Suggestions must pass the same four-word rule, and a person has to accept them.
 - gpt-oss-120b (@cf/openai/gpt-oss-120b): writes the bill's first-person diary entry after every hop, the escalating nag emails to holders who sit on it, and the eulogy plus a short, labeled closing when a bill is lost.
 - FLUX.1 [schnell] (@cf/black-forest-labs/flux-1-schnell): paints the ink illustration in the middle of each passport stamp. The lettering is SVG, because image models garble text.
-- Every output is validated against a Zod schema, with versioned prompts and hand-written fallbacks. Every output records the model that wrote it, and Open Books charts those records. The same prompts can run on Claude (Anthropic API) if a key is set.
+- Generated text is validated against Zod schemas, with versioned prompts and hand-written fallbacks. Writing records retain model provenance; Open Books counts diary records by model and ready stamp illustrations. The same prompts can run on Claude (Anthropic API) if a key is set.
 
-AI is a character, not an author. People write every word of the story. The only AI text in a story is a lost bill's closing, which is always labeled and capped at about 5% of the story.
+AI plays the bill; people choose the contributions, including any suggestions they accept. The only AI text added without a holder choosing it is a lost bill's closing, which is always labeled and capped at about 5% of the story.
 ```
 
 ## Which additional sponsor tool(s) did you use?
@@ -361,7 +365,7 @@ https://fourwordpass.com
 ## Testing instructions or credentials
 
 ```text
-Hosted prototype: https://fourwordpass.com, using the PayPal sandbox. These instructions require a hosted retest after the Oct 9 repairs are deployed. Sandbox checkout compatibility remains a known issue; no live payment is required. No account is needed to play, and it works on phones and computers.
+Hosted prototype: https://fourwordpass.com, using the PayPal sandbox. These instructions require a hosted retest after the latest repairs and mode changes are deployed. Sandbox checkout compatibility remains a known issue; no live payment is required. No account is needed to play, and it works on phones and computers.
 
 1. JOIN A STORY (free, about a minute)
    - Go to https://fourwordpass.com/wild, open a bill, and click "Claim this buck" with an email address you can read.
@@ -372,10 +376,10 @@ Hosted prototype: https://fourwordpass.com, using the PayPal sandbox. These inst
    - Not for you? "Not for you? Send it back" at the bottom of the panel (and in every holder email) returns it to whoever passed it to you, and they pick someone else. Try it from the second email you passed it to.
 
 2. OPEN THE BOOKS
-   - On any bill page, click "Its PayPal ledger", or go to https://fourwordpass.com/books. Your claim and pass are there with PayPal's status, a masked PayPal reference, time to land, and the verified webhook. Filter, sort, search or download the CSV; the charts follow the ledger's filters.
+   - On any bill page, click "Its PayPal ledger", or go to https://fourwordpass.com/books. Your claim and pass are there with PayPal's status, a masked PayPal reference, time to land, and whether a verified webhook was recorded. Filter, sort, search or download the CSV; payment charts and totals follow the ledger's filters, while the authorship and AI-by-model charts remain sitewide.
 
 3. START A STORY ($2, sandbox money)
-   - Go to https://fourwordpass.com/release and write the first four words. Choose "Debit or Credit Card" and use the PayPal sandbox test card shown on the page (it has copy buttons for every field). It works on phones and computers.
+   - Go to https://fourwordpass.com/release and write the first four words. Choose "Debit or Credit Card" and use the PayPal sandbox test card shown on the page (it has copy buttons for every field). Retest this step on the phone and computer used for the demo.
    - You'll get a creator link by email, which lets you write the finale whenever you like. The sandbox $2 shows up in Open Books. If the first recipient is rejected, the paid story goes wild and you retain the creator key. If finishing checkout fails, use "Finish saved checkout" to retry the approved order rather than starting another payment.
 
 4. LOOK AROUND
@@ -383,6 +387,7 @@ Hosted prototype: https://fourwordpass.com, using the PayPal sandbox. These inst
    - Fork any bill from any hop with "Fork from here".
    - On long stories, use Earlier hops / Later hops or Beginning / Latest. The map and passport match the selected story page.
    - Follow a story, then confirm the preference using the email link. No updates start until confirmation.
+   - Optionally sign in with an emailed code. Check Your bucks for your history, claim a pen name, and manage follow preferences. Playing from private links still requires no account.
 
 Run it locally: see the README. Mock PayPal mode runs the whole loop with no credentials.
 ```
@@ -398,7 +403,7 @@ Run it locally: see the README. Mock PayPal mode runs the whole loop with no cre
 Draft. Make it yours:
 
 ```text
-Payouts is a great fit for a product where the platform has to be the sender of record. One API call per hop, idempotency via sender_batch_id, and webhooks gave us a clean, verifiable chain, clean enough that we publish the whole ledger. Orders v2 with the JS SDK buttons was straightforward.
+Payouts is a great fit for a product where the platform has to be the sender of record. A payout on each named handoff or wild claim, idempotency via sender_batch_id, and webhooks gave us a clean, verifiable chain, clean enough that we publish the whole ledger. Orders v2 with the JS SDK buttons was straightforward.
 
 What slowed us down:
 - UNCLAIMED is the normal result for a payout to a real email in sandbox, but it's easy to assume SUCCESS is the happy path. Our spec gated the whole chain on SUCCESS and would have stalled every story at its first stranger. A line in the Payouts quickstart saying "treat UNCLAIMED as delivered, then handle RETURNED" would help.
@@ -430,7 +435,7 @@ We used AG Grid Community and AG Charts Community for Open Books (fourwordpass.c
 What worked well:
 - The Theming API. themeQuartz.withParams matched our paper-and-ink brand with about a dozen params and no CSS overrides.
 - Module registration kept the bundle honest: we registered only what we used. In development, the ValidationModule caught two modules we'd forgotten (LocaleModule for localeText, ClientSideRowModelApiModule for forEachNodeAfterFilter) and a v36.2 deprecation, each with the exact import to add. That saved real time.
-- Grid-driven charts were easy. onModelUpdated plus forEachNodeAfterFilter gave us the filtered rows, and every chart and stat tile on the page recomputes from them, so filtering the ledger re-slices the whole dashboard.
+- Grid-driven charts were easy. onModelUpdated plus forEachNodeAfterFilter gave us the filtered rows. Payment totals and the money, status and landing-time charts recompute from them. The authorship and AI-by-model charts intentionally remain sitewide.
 - getRowId plus enableCellChangeFlash made live updates feel alive: when PayPal's status for a payout changes, the cell flashes in place.
 - CSV export took one line.
 
@@ -451,5 +456,23 @@ The AG Grid sponsor page (paypalaihackathon.devpost.com/details/aggrid) is about
 
 Open Books qualifies, since the prize is open to entries that "use any AG Grid tools." But it's exactly the grid and charts on their own, so it's up against what the judges asked for.
 
-- **Ship as is.** Lean on what's already there: Theming API branding, custom cell renderers, and a grid that cross-filters every chart.
-- **Rebuild Open Books on AG Studio** with a Studio agent ("show me payouts that took over 30 seconds"). That also adds AI to the sponsor surface. Two catches: the free trial license lasts 45 days, so one started today expires Nov 23, before judging opens Dec 1. Ask the AG Grid team on the PayPal Discord about a license that runs through Dec 15, or start the trial after Oct 31. And AG Studio is commercial software in an MIT repo, which the rules allow but is worth a sentence in the README.
+- **Ship as is.** Lean on what's already there: Theming API branding, custom cell renderers, and a ledger that filters the payment charts and totals.
+- **Rebuild Open Books on AG Studio** with a Studio agent ("show me payouts that took over 30 seconds"). That also adds AI to the sponsor surface. Two catches: the free trial license lasts 45 days, so one started October 10 expires around November 24, before judging opens Dec 1. Ask the AG Grid team on the PayPal Discord about a license that runs through Dec 15, or start the trial November 1 or later. And AG Studio is commercial software in an MIT repo, which the rules allow but is worth a sentence in the README.
+
+
+# October 10 sponsor review
+
+Official sources: [prize list](https://paypalaihackathon.devpost.com/#prizes), [rules and eligibility by prize](https://paypalaihackathon.devpost.com/rules), and each linked sponsor page below. Amounts describe individual awards, not a combined amount this entry is guaranteed to win.
+
+| Sponsor / award | Prize | Fit for Four Word Pass |
+| --- | --- | --- |
+| [AG Grid](https://paypalaihackathon.devpost.com/details/aggrid) | $5,000 first; $2,000 second; three $1,000 third-place awards | Already a meaningful integration. Lead with Open Books as the reader's way to investigate a story's payments. Any AG Grid tool qualifies under the rules, but the sponsor page favors polished Studio dashboards and agents. Do not claim AG Studio. |
+| [APIMatic](https://paypalaihackathon.devpost.com/details/apimatic) | Three $1,000 awards, plus six months Business | Best potential extra fit: its PayPal Context Plugin can assist the real PayPal integration and future held-dollar work without changing the product. This checkout uses direct fetch calls and has no verified Context Plugin usage, so leave the sponsor field as AG Grid and the APIMatic experience as N/A today. Use the actual plugin for a meaningful integration task and document that work before claiming this prize. |
+| [Bryntum](https://paypalaihackathon.devpost.com/details/bryntum) | Three $1,000 awards | Scheduling/Gantt/calendar tools. A forced replacement for the passport or reminder logic adds little; skip. |
+| [Channel3](https://paypalaihackathon.devpost.com/details/channel3) | $1,500 | Requires meaningful product search/enrichment/recommendations. Shopping is outside this story-passing product; skip. |
+| [Render](https://paypalaihackathon.devpost.com/details/render) | $1,000 / $750 / $500 in Render credits | Credits, not cash. Existing Workers/D1/R2/email architecture is a strong fit; moving hosting to chase credits is unnecessary. |
+| Astropods, Elastic, KERNEL, Postman, Zapier | No separate named cash award in the current prize list | Sponsor resources exist, but no current integration or natural product need justifies expanding scope for them. |
+
+Also emphasize the existing fit for **Most Creative ($5,000)** and **Best Use of PayPal + AI ($5,000)**. The latter has a concrete story: PayPal outcomes drive the narrative lifecycle, and AI gives those lifecycle events a character. Do not present the application as autonomous agentic commerce: people approve checkout and choose contributions, and AI does not authorize payments.
+
+Local mode audit: `PAYPAL_MODE` selects sandbox/live/mock, scoped credentials, and mode-specific copy throughout the app. Live checkout and new payouts remain paused pending the held-dollar model. Historical sandbox/mock receipts stay labeled. These changes are local until deployed and retested.

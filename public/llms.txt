@@ -6,14 +6,14 @@ Canonical site: https://fourwordpass.com
 
 ## Current status
 
-Four Word Pass is a PayPal sandbox beta. Checkout and payouts use test money; no real money changes hands. Releasing or forking a bill uses a $2 sandbox checkout. Holding and contributing are free. Sandbox checkout takes only the PayPal sandbox test card shown on the checkout page. A holder who doesn't want a bill can send it back to whoever passed it to them.
+Check /api/config and the visible payment notice for the current payment environment. In test environments, no real money moves. Live checkout and new live payouts are currently paused. Holding and contributing are free. A holder who doesn't want a bill can send it back to whoever passed it to them.
 
 ## Public pages
 
 - [Home and frequently asked questions](https://fourwordpass.com/): How the game works, sample stories, and the four-word rule.
 - [Release a buck](https://fourwordpass.com/release): Start a story with four words and an optional prompt. Choose the first recipient or release it to the wild.
 - [The wild](https://fourwordpass.com/wild): Read bills waiting for their next holder.
-- [Sandbox beta guide](https://fourwordpass.com/beta): Real app emails and public posts, test payments, demo histories, and testing limits.
+- [Beta guide](https://fourwordpass.com/beta): App emails, public posts, payment availability, demo histories, and testing limits.
 - [Privacy policy](https://fourwordpass.com/privacy): Information collected, public content, providers, browser storage, retention, and manual privacy requests.
 - [Terms of use](https://fourwordpass.com/terms): Participation is for adults 18 or older, with public collaborative contributions and invited recipients.
 - [Support and contact](https://fourwordpass.com/support): Missing links, payment testing, abuse reports, privacy requests, and security reports. Contact support@fourwordpass.com.
