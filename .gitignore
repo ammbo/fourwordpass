@@ -8,5 +8,6 @@ dist
 *.local
 .firecrawl/
 output/
+scripts/seed-wild/test-users.json
 devpost-submission.md
 video-concepts.md

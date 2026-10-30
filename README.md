@@ -70,6 +70,7 @@ worker/
   admin.ts       seed demo bills, fast-forward time, feature, remove a hop, mark admins
   accounts.ts    optional accounts: emailed sign-in codes, sessions, pen names, dashboard, participant ids
 shared/words.ts  the four-word rule (used by the browser counter AND the server)
+scripts/seed-wild/  hand-written demo stories for the wild, built into SQL
 src/             React app: Home, Release, Wild, Bill page (story/map/diary/passport/fork tree), Open Books
 migrations/      D1 schema
 ```
@@ -170,6 +171,8 @@ Every admin call takes `Authorization: Bearer $ADMIN_TOKEN`.
 | `POST /api/admin/remove-hop {serial, idx}` | Remove an abusive hop. The story recomputes and payout history stays. |
 | `POST /api/admin/cron` · `GET /api/admin/outbox` · `GET /api/admin/inbox` | Run cron now · recent sent emails · received emails |
 | `POST /api/admin/users {email, admin}` · `GET /api/admin/users` | Mark an account as admin (creates it if needed; the person still proves the address at sign-in) · list accounts |
+
+**Hand-written seeds.** `/api/admin/seed` has AI write the story. To seed stories written ahead of time instead, put them in `scripts/seed-wild/stories.ts` and run `node scripts/seed-wild/build.ts`. It checks every hop against the four-word rule and writes SQL to `output/seed-wild/`. It needs no admin token: apply it with `wrangler d1 execute --remote --file`. Cron then stamps each story's last four hops. Test accounts can sign some hops with their pen names. They're listed in `scripts/seed-wild/test-users.json`, which is gitignored. The comment at the top of `build.ts` gives the steps. Wild bills, seeds included, are eulogized after 14 days unclaimed, so seed again before a demo.
 
 **Admin accounts can release bucks without checkout.** Signed in as an admin, the release and fork forms show "Release it free", which skips PayPal entirely. That's the way around the sandbox checkout, which only accepts sandbox test credentials. The bill is minted with `comped_by` set and no checkout order. The platform funds its first payout as usual, and Open Books lists the release as "Comped by the operator", $0 in, so that payout isn't unexplained. Live mode refuses comps, as it does every payout. To make yourself an admin:
 
